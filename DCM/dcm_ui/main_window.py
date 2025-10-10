@@ -1,27 +1,22 @@
-# dcm_ui/main_window.py
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QLabel, QLineEdit, QPushButton,
     QMessageBox, QGroupBox, QStackedWidget
 )
 from dcm_core.user_manager import UserManager
-from dcm_ui.parameters_page import ParametersPage  # make sure this file exists
+from dcm_ui.parameters_page import ParametersPage
 
 class MainWindow(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Device Controller Monitor")
-
-        # --- Set default window size and minimum size ---
-        self.resize(800, 600)           # default size
-        self.setMinimumSize(600, 400)   # cannot shrink below this
+        self.resize(800, 600)
+        self.setMinimumSize(600, 400)
 
         self.user_manager = UserManager()
         self.main_layout = QVBoxLayout()
         self.setLayout(self.main_layout)
 
-        # =========================
-        # Login Group
-        # =========================
+        # --- Login Widgets ---
         self.login_group = QGroupBox()
         login_layout = QVBoxLayout()
 
@@ -38,7 +33,6 @@ class MainWindow(QWidget):
         login_button.clicked.connect(self.handle_login)
         login_layout.addWidget(login_button)
 
-        # Register button (added AFTER login_layout exists)
         self.btn_register = QPushButton("Register")
         self.btn_register.clicked.connect(self.open_register)
         login_layout.addWidget(self.btn_register)
@@ -46,17 +40,14 @@ class MainWindow(QWidget):
         self.login_group.setLayout(login_layout)
         self.main_layout.addWidget(self.login_group)
 
-        # =========================
-        # Stacked pages (Dashboard + Parameters)
-        # =========================
+        # --- Stacked Pages (Dashboard + Parameters) ---
         self.stack = QStackedWidget()
         self.main_layout.addWidget(self.stack)
-        self.stack.setVisible(False)  # hidden until login succeeds
+        self.stack.setVisible(False)
 
-        # --- Dashboard page ---
+        # Dashboard
         self.dashboard_group = QGroupBox("Dashboard")
         dashboard_layout = QVBoxLayout()
-
         self.welcome_label = QLabel("")
         dashboard_layout.addWidget(self.welcome_label)
 
@@ -68,24 +59,23 @@ class MainWindow(QWidget):
 
         self.dashboard_group.setLayout(dashboard_layout)
 
-        # --- Parameters page ---
+        # Parameters page
         self.params_page = ParametersPage(self)
 
-        # Add pages to stack
-        self.stack.addWidget(self.dashboard_group)  # index 0
-        self.stack.addWidget(self.params_page)      # index 1
+        self.stack.addWidget(self.dashboard_group)
+        self.stack.addWidget(self.params_page)
 
-        # Navigation
+        # --- Connect signals ---
         self.btn_parameters.clicked.connect(
             lambda: self.stack.setCurrentWidget(self.params_page)
         )
 
-        # (Optional) Wire a simple way back to dashboard from the params page
-        # e.g., add a top-level button in ParametersPage and connect it here if desired.
+        # Connect back signal from ParametersPage
+        self.params_page.goHome.connect(
+            lambda: self.stack.setCurrentWidget(self.dashboard_group)
+        )
 
-    # =========================
-    # Slots
-    # =========================
+    # --- Event Handlers ---
     def open_register(self):
         from dcm_ui.register_dialog import RegisterDialog
         dlg = RegisterDialog(self)
@@ -101,7 +91,6 @@ class MainWindow(QWidget):
         user = self.login_user.text()
         password = self.login_pass.text()
         if self.user_manager.login(user, password):
-            # Switch to stacked pages (dashboard shown by default)
             self.login_group.hide()
             self.stack.setVisible(True)
             self.stack.setCurrentWidget(self.dashboard_group)

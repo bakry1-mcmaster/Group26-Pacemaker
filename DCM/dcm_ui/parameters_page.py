@@ -1,16 +1,17 @@
 # - UI for entering/reviewing programmable parameters.
 # - Uses parameter_store.py for validation (e.g., making sure values are within allowed ranges).
 
-# File: dcm_ui/parameters_page.py
 import json, os
 from dataclasses import dataclass, asdict
 from PyQt5.QtWidgets import (
-    QWidget, QFormLayout, QLineEdit, QLabel, QPushButton, QVBoxLayout, QHBoxLayout, QMessageBox
+    QWidget, QFormLayout, QLineEdit, QLabel, QPushButton,
+    QVBoxLayout, QHBoxLayout, QMessageBox
 )
 from PyQt5.QtGui import QIntValidator, QDoubleValidator
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, pyqtSignal   # <-- added pyqtSignal
 
 PARAMS_FILE = "dcm_params.json"
+
 
 @dataclass
 class PacingParams:
@@ -20,28 +21,24 @@ class PacingParams:
 
     # Atrial
     a_amp_mV: float = 3000.0   # 500–7000 mV suggested
-    a_pw_ms: float = 0.4        # 0.1–1.9 ms
+    a_pw_ms: float = 0.4       # 0.1–1.9 ms
 
     # Ventricular
-    v_amp_mV: float = 3500.0    # 500–7000 mV
-    v_pw_ms: float = 0.4        # 0.1–1.9 ms
+    v_amp_mV: float = 3500.0   # 500–7000 mV
+    v_pw_ms: float = 0.4       # 0.1–1.9 ms
 
     # Refractory periods
-    arp_ms: int = 250           # 150–500 ms
-    vrp_ms: int = 320           # 150–500 ms
+    arp_ms: int = 250          # 150–500 ms
+    vrp_ms: int = 320          # 150–500 ms
+
 
 class ParametersPage(QWidget):
-    """Collects + validates core D1 parameters and persists locally.
-    Ranges used (Deliverable 1 friendly):
-      - LRL: 30–175 bpm (maps to 343–2000 ms)
-      - URL: 50–175 bpm (UI only in D1)
-      - A/V Amplitudes: 500–7000 mV
-      - A/V Pulse Width: 0.1–1.9 ms
-      - ARP/VRP: 150–500 ms
-    """
+    """Collects + validates core D1 parameters and persists locally."""
+    goHome = pyqtSignal()   # <-- signal to go back to dashboard
+
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setObjectName('ParametersPage')
+        self.setObjectName("ParametersPage")
 
         self.params = self._load()
 
@@ -106,26 +103,28 @@ class ParametersPage(QWidget):
         self.lbl_status.setStyleSheet("color:#2a7; font-weight:500;")
         self.layout().addWidget(self.lbl_status)
 
-        # NEW: Back to Dashboard button
+        # Back button
         self.btn_back = QPushButton("← Back to Dashboard")
         self.layout().addWidget(self.btn_back)
 
         self.layout().addStretch(1)
 
         # Signals
-        for w in (self.ed_lrl, self.ed_url, self.ed_a_amp, self.ed_a_pw,
-                  self.ed_v_amp, self.ed_v_pw, self.ed_arp, self.ed_vrp):
+        for w in (
+            self.ed_lrl, self.ed_url, self.ed_a_amp, self.ed_a_pw,
+            self.ed_v_amp, self.ed_v_pw, self.ed_arp, self.ed_vrp
+        ):
             w.textChanged.connect(self._on_changed)
 
         self.btn_save.clicked.connect(self._save)
         self.btn_reset.clicked.connect(self._reset)
-        self.btn_back.clicked.connect(self._go_home)
+        self.btn_back.clicked.connect(lambda: self.goHome.emit())  # emits signal
 
     # --- helpers ---
     def _load(self) -> PacingParams:
         if os.path.exists(PARAMS_FILE):
             try:
-                data = json.load(open(PARAMS_FILE, 'r'))
+                data = json.load(open(PARAMS_FILE, "r"))
                 return PacingParams(**data)
             except Exception:
                 pass
@@ -136,7 +135,7 @@ class ParametersPage(QWidget):
             return
         self._apply_to_model()
         try:
-            with open(PARAMS_FILE, 'w') as f:
+            with open(PARAMS_FILE, "w") as f:
                 json.dump(asdict(self.params), f, indent=2)
             self.lbl_status.setText("Parameters saved ✔")
         except Exception as e:
@@ -173,7 +172,6 @@ class ParametersPage(QWidget):
         self._update_intervals()
 
     def _update_intervals(self):
-        # Convert bpm -> ms safely
         def to_ms(bpm_text: str):
             try:
                 bpm = int(bpm_text)
@@ -186,7 +184,6 @@ class ParametersPage(QWidget):
         self.lbl_uri.setText(f"{uri} ms" if uri else "–")
 
     def _validate_all(self, show_msg=False) -> bool:
-        # Ensure all fields pass their validators and bounds (including logical checks)
         fields = [
             (self.ed_lrl, "LRL (30–175 bpm)"),
             (self.ed_url, "URL (50–175 bpm)"),
@@ -195,16 +192,16 @@ class ParametersPage(QWidget):
             (self.ed_v_amp, "Ventricular Amplitude (500–7000 mV)"),
             (self.ed_v_pw, "Ventricular PW (0.1–1.9 ms)"),
             (self.ed_arp, "ARP (150–500 ms)"),
-            (self.ed_vrp, "VRP (150–500 ms)")
+            (self.ed_vrp, "VRP (150–500 ms)"),
         ]
         for w, name in fields:
             if not w.hasAcceptableInput():
                 if show_msg:
                     QMessageBox.warning(self, "Invalid Input", f"Please correct: {name}")
                 return False
-        # Logical: LRL <= URL
         try:
-            lrl = int(self.ed_lrl.text()); url = int(self.ed_url.text())
+            lrl = int(self.ed_lrl.text())
+            url = int(self.ed_url.text())
             if lrl > url:
                 if show_msg:
                     QMessageBox.warning(self, "Invalid Rates", "LRL must be ≤ URL.")
@@ -214,9 +211,3 @@ class ParametersPage(QWidget):
                 QMessageBox.warning(self, "Invalid Rates", "Rates must be integers.")
             return False
         return True
-
-    def _go_home(self):
-        """Return to the dashboard page inside MainWindow's stacked widget."""
-        parent = self.parent()
-        if parent and hasattr(parent, "stack") and hasattr(parent, "dashboard_group"):
-            parent.stack.setCurrentWidget(parent.dashboard_group)
