@@ -5,7 +5,7 @@ from PyQt5.QtWidgets import (
 )
 from dcm_core.user_manager import UserManager
 from dcm_ui.parameters_page import ParametersPage  # make sure this file exists
-
+from dcm_ui.pacing_modes import PacingModesPage
 class MainWindow(QWidget):
     def __init__(self):
         super().__init__()
@@ -70,14 +70,19 @@ class MainWindow(QWidget):
 
         # --- Parameters page ---
         self.params_page = ParametersPage(self)
+        self.pacing_page = PacingModesPage(self)
 
         # Add pages to stack
         self.stack.addWidget(self.dashboard_group)  # index 0
         self.stack.addWidget(self.params_page)      # index 1
+        self.stack.addWidget(self.pacing_page)
 
         # Navigation
         self.btn_parameters.clicked.connect(
             lambda: self.stack.setCurrentWidget(self.params_page)
+        )
+        self.btn_pacing.clicked.connect(
+            lambda: self.stack.setCurrentWidget(self.pacing_page)
         )
 
         # (Optional) Wire a simple way back to dashboard from the params page
