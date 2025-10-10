@@ -1,9 +1,10 @@
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QLabel, QLineEdit, QPushButton,
-    QMessageBox, QGroupBox, QStackedWidget
+    QMessageBox, QGroupBox, QStackedWidget, QVBoxLayout
 )
 from dcm_core.user_manager import UserManager
 from dcm_ui.parameters_page import ParametersPage
+from dcm_ui.pacing_modes import PacingModesPage
 
 class MainWindow(QWidget):
     def __init__(self):
@@ -40,7 +41,7 @@ class MainWindow(QWidget):
         self.login_group.setLayout(login_layout)
         self.main_layout.addWidget(self.login_group)
 
-        # --- Stacked Pages (Dashboard + Parameters) ---
+        # --- Stacked Pages (Dashboard + Parameters + Pacing Modes) ---
         self.stack = QStackedWidget()
         self.main_layout.addWidget(self.stack)
         self.stack.setVisible(False)
@@ -62,16 +63,26 @@ class MainWindow(QWidget):
         # Parameters page
         self.params_page = ParametersPage(self)
 
-        self.stack.addWidget(self.dashboard_group)
-        self.stack.addWidget(self.params_page)
+        # Pacing modes page
+        self.pacing_page = PacingModesPage(self)
+
+        self.stack.addWidget(self.dashboard_group)  # index 0
+        self.stack.addWidget(self.params_page)      # index 1
+        self.stack.addWidget(self.pacing_page)      # index 2   <-- fixed .addWidget
 
         # --- Connect signals ---
         self.btn_parameters.clicked.connect(
             lambda: self.stack.setCurrentWidget(self.params_page)
         )
+        self.btn_pacing.clicked.connect(
+            lambda: self.stack.setCurrentWidget(self.pacing_page)
+        )
 
-        # Connect back signal from ParametersPage
+        # Back signals from subpages
         self.params_page.goHome.connect(
+            lambda: self.stack.setCurrentWidget(self.dashboard_group)
+        )
+        self.pacing_page.goHome.connect(
             lambda: self.stack.setCurrentWidget(self.dashboard_group)
         )
 

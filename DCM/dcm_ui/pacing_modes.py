@@ -1,192 +1,134 @@
-# pacing_modes.py
-# - Lists all pacing modes from Part 1.
-# - Simple dropdowns, buttons, or tabbed interface.
-import json, os
-from dataclasses import dataclass, asdict
-from PyQt5.QtWidgets import (
-    QWidget, QFormLayout, QLineEdit, QLabel, QPushButton, QVBoxLayout, QHBoxLayout, QMessageBox
-)
-from PyQt5.QtGui import QIntValidator, QDoubleValidator
-from PyQt5.QtCore import Qt
+# File: dcm_ui/pacing_modes.py
+# - Part 1 pacing modes selection (AOO, VOO, AAI, VVI)
+# - Minimal UI: radio buttons + Save + Back
+# - Persists to working-directory JSON: dcm_mode.json
 
-PARAMS_FILE = "dcm_modes.json"
+import json
+import os
+from dataclasses import dataclass, asdict
+
+from PyQt5.QtCore import pyqtSignal
+from PyQt5.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QRadioButton,
+    QLabel, QPushButton, QMessageBox
+)
+
+MODE_FILE = "dcm_mode.json"
+
 
 @dataclass
-class PacingModes:
-    # Rates in bpm
-    lrl_bpm: int = 60        # Lower Rate Limit
-    url_bpm: int = 120       # Upper Rate Limit
+class ModeSelection:
+    mode: str = "VVI"  # default; valid: AOO, VOO, AAI, VVI
 
-    # Atrial
-    a_amp_mV: float = 3000.0   # 500–7000 mV suggested
-    a_pw_ms: float = 0.4        # 0.1–1.9 ms
-
-    # Ventricular
-    v_amp_mV: float = 3500.0    # 500–7000 mV
-    v_pw_ms: float = 0.4        # 0.1–1.9 ms
-
-    # Refractory periods
-    arp_ms: int = 250           # 150–500 ms
-    vrp_ms: int = 320           # 150–500 ms
 
 class PacingModesPage(QWidget):
-    """Collects + validates core D1 parameters and persists locally.
-    Ranges used (Deliverable 1 friendly):
-      - LRL: 30–175 bpm (maps to 343–2000 ms)
-      - URL: 50–175 bpm (UI only in D1)
-      - A/V Amplitudes: 500–7000 mV
-      - A/V Pulse Width: 0.1–1.9 ms
-      - ARP/VRP: 150–500 ms
-    """
+    """Simple page to select a pacing mode (AOO, VOO, AAI, VVI) and persist locally."""
+    goHome = pyqtSignal()  # used by MainWindow to navigate back
+
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setObjectName('ParametersPage')
+        self.setObjectName("PacingModesPage")
 
-        self.params = self._load()
+        # Load previously saved selection
+        self.selection = self._load()
 
-        self.form = QFormLayout()
-        self.setLayout(QVBoxLayout())
-        self.layout().addLayout(self.form)
+        # --- Layout root ---
+        root = QVBoxLayout(self)
 
-        # --- Widgets ---
-        
-        # Save / Reset buttons
+        title = QLabel("Pacing Modes")
+        title.setStyleSheet("font-size: 18px; font-weight: 600;")
+        root.addWidget(title)
+
+        # --- Modes group ---
+        box = QGroupBox("Select Mode")
+        box_layout = QVBoxLayout()
+        box.setLayout(box_layout)
+
+        self.rb_aoo = QRadioButton("AOO")
+        self.rb_voo = QRadioButton("VOO")
+        self.rb_aai = QRadioButton("AAI")
+        self.rb_vvi = QRadioButton("VVI")
+
+        box_layout.addWidget(self.rb_aoo)
+        box_layout.addWidget(self.rb_voo)
+        box_layout.addWidget(self.rb_aai)
+        box_layout.addWidget(self.rb_vvi)
+
+        root.addWidget(box)
+
+        # Description label
+        self.lbl_desc = QLabel("")
+        self.lbl_desc.setWordWrap(True)
+        self.lbl_desc.setStyleSheet("color: #444;")
+        root.addWidget(self.lbl_desc)
+
+        # Buttons row
         row = QHBoxLayout()
-        self.aoo = QPushButton("AOO")
-        self.voo = QPushButton("VOO")
-        self.aai = QPushButton("AAI")
-        self.vvi = QPushButton("VVI")
-        self.btn_reset = QPushButton("Reset Defaults")
-
-        self.btn_save = QPushButton("Save Parameters")
-        self.btn_reset = QPushButton("Reset Defaults")
-        row.addWidget(self.btn_reset)
+        self.btn_back = QPushButton("← Back to Dashboard")
+        self.btn_save = QPushButton("Save Mode")
+        row.addWidget(self.btn_back)
         row.addStretch(1)
         row.addWidget(self.btn_save)
-        row.addStretch(1)
-        row.addWidget(self.aoo)
-        row.addStretch(1)
-        row.addWidget(self.voo)
-        row.addStretch(1)
-        row.addWidget(self.aai)
-        row.addStretch(1)
-        row.addWidget(self.vvi)
-        self.layout().addLayout(row)
+        root.addLayout(row)
 
-        # Status label
-        self.lbl_status = QLabel("")
-        self.lbl_status.setStyleSheet("color:#2a7; font-weight:500;")
-        self.layout().addWidget(self.lbl_status)
+        root.addStretch(1)
 
-        # NEW: Back to Dashboard button
-        self.btn_back = QPushButton("← Back to Dashboard")
-        self.layout().addWidget(self.btn_back)
-
-        self.layout().addStretch(1)
+        # Initialize selection + description
+        self._init_selection(self.selection.mode)
+        self._update_description()
 
         # Signals
+        for rb in (self.rb_aoo, self.rb_voo, self.rb_aai, self.rb_vvi):
+            rb.toggled.connect(self._update_description)
 
-
-        self.btn_save.clicked.connect(self._save)
-        self.btn_reset.clicked.connect(self._reset)
-        self.btn_back.clicked.connect(self._go_home)
+        self.btn_save.clicked.connect(self._save_mode)
+        self.btn_back.clicked.connect(lambda: self.goHome.emit())
 
     # --- helpers ---
-    def _load(self) -> PacingParams:
-        if os.path.exists(PARAMS_FILE):
-            try:
-                data = json.load(open(PARAMS_FILE, 'r'))
-                return PacingParams(**data)
-            except Exception:
-                pass
-        return PacingModes()
+    def _init_selection(self, mode: str):
+        mode = (mode or "").upper()
+        mapping = {
+            "AOO": self.rb_aoo,
+            "VOO": self.rb_voo,
+            "AAI": self.rb_aai,
+            "VVI": self.rb_vvi,
+        }
+        rb = mapping.get(mode, self.rb_vvi)
+        rb.setChecked(True)
 
-    def _save(self):
-        if not self._validate_all(show_msg=True):
-            return
-        self._apply_to_model()
+    def _current_mode(self) -> str:
+        if self.rb_aoo.isChecked():
+            return "AOO"
+        if self.rb_voo.isChecked():
+            return "VOO"
+        if self.rb_aai.isChecked():
+            return "AAI"
+        return "VVI"
+
+    def _update_description(self):
+        descs = {
+            "AOO": "AOO — Asynchronous atrial pacing at the programmed lower rate; no sensing or inhibition.",
+            "VOO": "VOO — Asynchronous ventricular pacing at the programmed lower rate; no sensing or inhibition.",
+            "AAI": "AAI — Atrial demand pacing: senses atrium; inhibits pacing on atrial sense; paces atrium at LRL otherwise.",
+            "VVI": "VVI — Ventricular demand pacing: senses ventricle; inhibits pacing on ventricular sense; paces ventricle at LRL otherwise.",
+        }
+        mode = self._current_mode()
+        self.lbl_desc.setText(descs.get(mode, ""))
+
+    def _save_mode(self):
+        self.selection.mode = self._current_mode()
         try:
-            with open(PARAMS_FILE, 'w') as f:
-                json.dump(asdict(self.params), f, indent=2)
-            self.lbl_status.setText("Parameters saved ✔")
+            with open(MODE_FILE, "w") as f:
+                json.dump(asdict(self.selection), f, indent=2)
+            QMessageBox.information(self, "Saved", f"Pacing mode set to {self.selection.mode}.")
         except Exception as e:
             QMessageBox.warning(self, "Save Failed", str(e))
 
-    def _reset(self):
-        self.params = PacingModes()
-        self._refresh_fields()
-        self.lbl_status.setText("Defaults restored.")
-
-    def _apply_to_model(self):
-        self.params.lrl_bpm = int(self.ed_lrl.text())
-        self.params.url_bpm = int(self.ed_url.text())
-        self.params.a_amp_mV = float(self.ed_a_amp.text())
-        self.params.a_pw_ms = float(self.ed_a_pw.text())
-        self.params.v_amp_mV = float(self.ed_v_amp.text())
-        self.params.v_pw_ms = float(self.ed_v_pw.text())
-        self.params.arp_ms = int(self.ed_arp.text())
-        self.params.vrp_ms = int(self.ed_vrp.text())
-
-    def _refresh_fields(self):
-        self.ed_lrl.setText(str(self.params.lrl_bpm))
-        self.ed_url.setText(str(self.params.url_bpm))
-        self.ed_a_amp.setText(str(self.params.a_amp_mV))
-        self.ed_a_pw.setText(str(self.params.a_pw_ms))
-        self.ed_v_amp.setText(str(self.params.v_amp_mV))
-        self.ed_v_pw.setText(str(self.params.v_pw_ms))
-        self.ed_arp.setText(str(self.params.arp_ms))
-        self.ed_vrp.setText(str(self.params.vrp_ms))
-        self._update_intervals()
-
-    def _on_changed(self):
-        self.lbl_status.clear()
-        self._update_intervals()
-
-    def _update_intervals(self):
-        # Convert bpm -> ms safely
-        def to_ms(bpm_text: str):
+    def _load(self) -> ModeSelection:
+        if os.path.exists(MODE_FILE):
             try:
-                bpm = int(bpm_text)
-                return int(round(60000.0 / bpm)) if bpm > 0 else 0
-            except ValueError:
-                return 0
-        lri = to_ms(self.ed_lrl.text())
-        uri = to_ms(self.ed_url.text())
-        self.lbl_lri.setText(f"{lri} ms" if lri else "–")
-        self.lbl_uri.setText(f"{uri} ms" if uri else "–")
-
-    def _validate_all(self, show_msg=False) -> bool:
-        # Ensure all fields pass their validators and bounds (including logical checks)
-        fields = [
-            (self.ed_lrl, "LRL (30–175 bpm)"),
-            (self.ed_url, "URL (50–175 bpm)"),
-            (self.ed_a_amp, "Atrial Amplitude (500–7000 mV)"),
-            (self.ed_a_pw, "Atrial PW (0.1–1.9 ms)"),
-            (self.ed_v_amp, "Ventricular Amplitude (500–7000 mV)"),
-            (self.ed_v_pw, "Ventricular PW (0.1–1.9 ms)"),
-            (self.ed_arp, "ARP (150–500 ms)"),
-            (self.ed_vrp, "VRP (150–500 ms)")
-        ]
-        for w, name in fields:
-            if not w.hasAcceptableInput():
-                if show_msg:
-                    QMessageBox.warning(self, "Invalid Input", f"Please correct: {name}")
-                return False
-        # Logical: LRL <= URL
-        try:
-            lrl = int(self.ed_lrl.text()); url = int(self.ed_url.text())
-            if lrl > url:
-                if show_msg:
-                    QMessageBox.warning(self, "Invalid Rates", "LRL must be ≤ URL.")
-                return False
-        except ValueError:
-            if show_msg:
-                QMessageBox.warning(self, "Invalid Rates", "Rates must be integers.")
-            return False
-        return True
-
-    def _go_home(self):
-        """Return to the dashboard page inside MainWindow's stacked widget."""
-        parent = self.parent()
-        if parent and hasattr(parent, "stack") and hasattr(parent, "dashboard_group"):
-            parent.stack.setCurrentWidget(parent.dashboard_group)
+                data = json.load(open(MODE_FILE, "r"))
+                return ModeSelection(**data)
+            except Exception:
+                pass
+        return ModeSelection()
