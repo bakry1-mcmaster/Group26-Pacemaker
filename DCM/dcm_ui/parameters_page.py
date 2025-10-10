@@ -10,7 +10,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtGui import QIntValidator, QDoubleValidator
 from PyQt5.QtCore import Qt
 
-PARAMS_FILE = os.path.join(os.path.expanduser('~'), '.dcm_params.json')
+PARAMS_FILE = "dcm_params.json"
 
 @dataclass
 class PacingParams:

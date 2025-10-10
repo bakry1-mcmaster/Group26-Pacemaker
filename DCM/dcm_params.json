@@ -1,0 +1,10 @@
+{
+  "lrl_bpm": 60,
+  "url_bpm": 120,
+  "a_amp_mV": 3000.0,
+  "a_pw_ms": 0.4,
+  "v_amp_mV": 3500.0,
+  "v_pw_ms": 0.4,
+  "arp_ms": 250,
+  "vrp_ms": 320
+}
