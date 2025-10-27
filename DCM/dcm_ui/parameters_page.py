@@ -1,14 +1,21 @@
-# - UI for entering/reviewing programmable parameters.
-# - Uses parameter_store.py for validation (e.g., making sure values are within allowed ranges).
+"""UI for entering and validating programmable parameters."""
 
-import json, os
+import json
+import os
 from dataclasses import dataclass, asdict
-from PyQt5.QtWidgets import (
-    QWidget, QFormLayout, QLineEdit, QLabel, QPushButton,
-    QVBoxLayout, QHBoxLayout, QMessageBox
-)
+
+from PyQt5.QtCore import pyqtSignal
 from PyQt5.QtGui import QIntValidator, QDoubleValidator
-from PyQt5.QtCore import Qt, pyqtSignal   # <-- added pyqtSignal
+from PyQt5.QtWidgets import (
+    QWidget,
+    QFormLayout,
+    QLineEdit,
+    QLabel,
+    QPushButton,
+    QVBoxLayout,
+    QHBoxLayout,
+    QMessageBox,
+)
 
 PARAMS_FILE = "dcm_params.json"
 
@@ -16,25 +23,26 @@ PARAMS_FILE = "dcm_params.json"
 @dataclass
 class PacingParams:
     # Rates in bpm
-    lrl_bpm: int = 60        # Lower Rate Limit
-    url_bpm: int = 120       # Upper Rate Limit
+    lrl_bpm: int = 60  # Lower Rate Limit
+    url_bpm: int = 120  # Upper Rate Limit
 
     # Atrial
-    a_amp_mV: float = 3000.0   # 500–7000 mV suggested
-    a_pw_ms: float = 0.4       # 0.1–1.9 ms
+    a_amp_mV: float = 3000.0  # 500-7000 mV suggested
+    a_pw_ms: float = 0.4  # 0.1-1.9 ms
 
     # Ventricular
-    v_amp_mV: float = 3500.0   # 500–7000 mV
-    v_pw_ms: float = 0.4       # 0.1–1.9 ms
+    v_amp_mV: float = 3500.0  # 500-7000 mV
+    v_pw_ms: float = 0.4  # 0.1-1.9 ms
 
     # Refractory periods
-    arp_ms: int = 250          # 150–500 ms
-    vrp_ms: int = 320          # 150–500 ms
+    arp_ms: int = 250  # 150-500 ms
+    vrp_ms: int = 320  # 150-500 ms
 
 
 class ParametersPage(QWidget):
-    """Collects + validates core D1 parameters and persists locally."""
-    goHome = pyqtSignal()   # <-- signal to go back to dashboard
+    """Collects and validates core D1 parameters and persists locally."""
+
+    goHome = pyqtSignal()  # signal to go back to dashboard
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -85,8 +93,8 @@ class ParametersPage(QWidget):
         # Computed labels
         self.lbl_lri = QLabel("")
         self.lbl_uri = QLabel("")
-        self.form.addRow("Computed V–V Interval (LRI)", self.lbl_lri)
-        self.form.addRow("Computed V–V Interval (URI)", self.lbl_uri)
+        self.form.addRow("Computed V-V Interval (LRI)", self.lbl_lri)
+        self.form.addRow("Computed V-V Interval (URI)", self.lbl_uri)
         self._update_intervals()
 
         # Save / Reset buttons
@@ -104,15 +112,21 @@ class ParametersPage(QWidget):
         self.layout().addWidget(self.lbl_status)
 
         # Back button
-        self.btn_back = QPushButton("← Back to Dashboard")
+        self.btn_back = QPushButton("Back to Dashboard")
         self.layout().addWidget(self.btn_back)
 
         self.layout().addStretch(1)
 
         # Signals
         for w in (
-            self.ed_lrl, self.ed_url, self.ed_a_amp, self.ed_a_pw,
-            self.ed_v_amp, self.ed_v_pw, self.ed_arp, self.ed_vrp
+            self.ed_lrl,
+            self.ed_url,
+            self.ed_a_amp,
+            self.ed_a_pw,
+            self.ed_v_amp,
+            self.ed_v_pw,
+            self.ed_arp,
+            self.ed_vrp,
         ):
             w.textChanged.connect(self._on_changed)
 
@@ -124,7 +138,8 @@ class ParametersPage(QWidget):
     def _load(self) -> PacingParams:
         if os.path.exists(PARAMS_FILE):
             try:
-                data = json.load(open(PARAMS_FILE, "r"))
+                with open(PARAMS_FILE, "r") as f:
+                    data = json.load(f)
                 return PacingParams(**data)
             except Exception:
                 pass
@@ -137,7 +152,7 @@ class ParametersPage(QWidget):
         try:
             with open(PARAMS_FILE, "w") as f:
                 json.dump(asdict(self.params), f, indent=2)
-            self.lbl_status.setText("Parameters saved ✔")
+            self.lbl_status.setText("Parameters saved")
         except Exception as e:
             QMessageBox.warning(self, "Save Failed", str(e))
 
@@ -178,21 +193,22 @@ class ParametersPage(QWidget):
                 return int(round(60000.0 / bpm)) if bpm > 0 else 0
             except ValueError:
                 return 0
+
         lri = to_ms(self.ed_lrl.text())
         uri = to_ms(self.ed_url.text())
-        self.lbl_lri.setText(f"{lri} ms" if lri else "–")
-        self.lbl_uri.setText(f"{uri} ms" if uri else "–")
+        self.lbl_lri.setText(f"{lri} ms" if lri else "--")
+        self.lbl_uri.setText(f"{uri} ms" if uri else "--")
 
-    def _validate_all(self, show_msg=False) -> bool:
+    def _validate_all(self, show_msg: bool = False) -> bool:
         fields = [
-            (self.ed_lrl, "LRL (30–175 bpm)"),
-            (self.ed_url, "URL (50–175 bpm)"),
-            (self.ed_a_amp, "Atrial Amplitude (500–7000 mV)"),
-            (self.ed_a_pw, "Atrial PW (0.1–1.9 ms)"),
-            (self.ed_v_amp, "Ventricular Amplitude (500–7000 mV)"),
-            (self.ed_v_pw, "Ventricular PW (0.1–1.9 ms)"),
-            (self.ed_arp, "ARP (150–500 ms)"),
-            (self.ed_vrp, "VRP (150–500 ms)"),
+            (self.ed_lrl, "LRL (30-175 bpm)"),
+            (self.ed_url, "URL (50-175 bpm)"),
+            (self.ed_a_amp, "Atrial Amplitude (500-7000 mV)"),
+            (self.ed_a_pw, "Atrial PW (0.1-1.9 ms)"),
+            (self.ed_v_amp, "Ventricular Amplitude (500-7000 mV)"),
+            (self.ed_v_pw, "Ventricular PW (0.1-1.9 ms)"),
+            (self.ed_arp, "ARP (150-500 ms)"),
+            (self.ed_vrp, "VRP (150-500 ms)"),
         ]
         for w, name in fields:
             if not w.hasAcceptableInput():
@@ -204,10 +220,11 @@ class ParametersPage(QWidget):
             url = int(self.ed_url.text())
             if lrl > url:
                 if show_msg:
-                    QMessageBox.warning(self, "Invalid Rates", "LRL must be ≤ URL.")
+                    QMessageBox.warning(self, "Invalid Rates", "LRL must be <= URL.")
                 return False
         except ValueError:
             if show_msg:
                 QMessageBox.warning(self, "Invalid Rates", "Rates must be integers.")
             return False
         return True
+

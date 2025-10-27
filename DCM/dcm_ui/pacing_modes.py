@@ -9,8 +9,14 @@ from dataclasses import dataclass, asdict
 
 from PyQt5.QtCore import pyqtSignal
 from PyQt5.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QRadioButton,
-    QLabel, QPushButton, QMessageBox
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QGroupBox,
+    QRadioButton,
+    QLabel,
+    QPushButton,
+    QMessageBox,
 )
 
 MODE_FILE = "dcm_mode.json"
@@ -22,7 +28,6 @@ class ModeSelection:
 
 
 class PacingModesPage(QWidget):
-    """Simple page to select a pacing mode (AOO, VOO, AAI, VVI) and persist locally."""
     goHome = pyqtSignal()  # used by MainWindow to navigate back
 
     def __init__(self, parent=None):
@@ -32,14 +37,14 @@ class PacingModesPage(QWidget):
         # Load previously saved selection
         self.selection = self._load()
 
-        # --- Layout root ---
+        # Layout root
         root = QVBoxLayout(self)
 
         title = QLabel("Pacing Modes")
         title.setStyleSheet("font-size: 18px; font-weight: 600;")
         root.addWidget(title)
 
-        # --- Modes group ---
+        # Modes group
         box = QGroupBox("Select Mode")
         box_layout = QVBoxLayout()
         box.setLayout(box_layout)
@@ -64,12 +69,17 @@ class PacingModesPage(QWidget):
 
         # Buttons row
         row = QHBoxLayout()
-        self.btn_back = QPushButton("← Back to Dashboard")
+        self.btn_back = QPushButton("Back to Dashboard")
         self.btn_save = QPushButton("Save Mode")
         row.addWidget(self.btn_back)
         row.addStretch(1)
         row.addWidget(self.btn_save)
         root.addLayout(row)
+
+        # Inline status label (green, like ParametersPage)
+        self.lbl_status = QLabel("")
+        self.lbl_status.setStyleSheet("color:#2a7; font-weight:500;")
+        root.addWidget(self.lbl_status)
 
         root.addStretch(1)
 
@@ -79,12 +89,12 @@ class PacingModesPage(QWidget):
 
         # Signals
         for rb in (self.rb_aoo, self.rb_voo, self.rb_aai, self.rb_vvi):
-            rb.toggled.connect(self._update_description)
+            rb.toggled.connect(self._on_mode_changed)
 
         self.btn_save.clicked.connect(self._save_mode)
         self.btn_back.clicked.connect(lambda: self.goHome.emit())
 
-    # --- helpers ---
+    # Helpers
     def _init_selection(self, mode: str):
         mode = (mode or "").upper()
         mapping = {
@@ -107,28 +117,37 @@ class PacingModesPage(QWidget):
 
     def _update_description(self):
         descs = {
-            "AOO": "AOO — Asynchronous atrial pacing at the programmed lower rate; no sensing or inhibition.",
-            "VOO": "VOO — Asynchronous ventricular pacing at the programmed lower rate; no sensing or inhibition.",
-            "AAI": "AAI — Atrial demand pacing: senses atrium; inhibits pacing on atrial sense; paces atrium at LRL otherwise.",
-            "VVI": "VVI — Ventricular demand pacing: senses ventricle; inhibits pacing on ventricular sense; paces ventricle at LRL otherwise.",
+            "AOO": "Asynchronous atrial pacing at the programmed lower rate; no sensing or inhibition.",
+            "VOO": "Asynchronous ventricular pacing at the programmed lower rate; no sensing or inhibition.",
+            "AAI": "Atrial demand pacing: senses atrium; inhibits on atrial sense; otherwise paces at LRL.",
+            "VVI": "Ventricular demand pacing: senses ventricle; inhibits on ventricular sense; otherwise paces at LRL.",
         }
         mode = self._current_mode()
         self.lbl_desc.setText(descs.get(mode, ""))
+
+    def _on_mode_changed(self):
+        # Clear status when user changes selection and update description
+        if hasattr(self, 'lbl_status') and self.lbl_status is not None:
+            self.lbl_status.clear()
+        self._update_description()
 
     def _save_mode(self):
         self.selection.mode = self._current_mode()
         try:
             with open(MODE_FILE, "w") as f:
                 json.dump(asdict(self.selection), f, indent=2)
-            QMessageBox.information(self, "Saved", f"Pacing mode set to {self.selection.mode}.")
+            # Inline confirmation instead of popup
+            self.lbl_status.setText(f"Pacing mode set to {self.selection.mode}.")
         except Exception as e:
             QMessageBox.warning(self, "Save Failed", str(e))
 
     def _load(self) -> ModeSelection:
         if os.path.exists(MODE_FILE):
             try:
-                data = json.load(open(MODE_FILE, "r"))
+                with open(MODE_FILE, "r") as f:
+                    data = json.load(f)
                 return ModeSelection(**data)
             except Exception:
                 pass
         return ModeSelection()
+

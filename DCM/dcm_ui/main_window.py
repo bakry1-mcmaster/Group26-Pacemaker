@@ -1,10 +1,12 @@
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QLabel, QLineEdit, QPushButton,
-    QMessageBox, QGroupBox, QStackedWidget, QVBoxLayout
+    QMessageBox, QGroupBox, QStackedWidget, QVBoxLayout, QHBoxLayout
 )
 from dcm_core.user_manager import UserManager
 from dcm_ui.parameters_page import ParametersPage
 from dcm_ui.pacing_modes import PacingModesPage
+from dcm_core.telemetry import TelemetryService, TelemetryState
+import json, os
 
 class MainWindow(QWidget):
     def __init__(self):
@@ -58,6 +60,30 @@ class MainWindow(QWidget):
         self.btn_parameters = QPushButton("Parameters")
         dashboard_layout.addWidget(self.btn_parameters)
 
+        # Status/Telemetry panel
+        status_box = QGroupBox("Status")
+        status_layout = QVBoxLayout()
+        self.lbl_comm = QLabel("Telemetry: Disconnected")
+        self.lbl_device = QLabel("Device: —")
+        self.lbl_note = QLabel("")
+        self.lbl_note.setStyleSheet("color:#a66;")
+        status_layout.addWidget(self.lbl_comm)
+        status_layout.addWidget(self.lbl_device)
+        status_layout.addWidget(self.lbl_note)
+        status_box.setLayout(status_layout)
+        dashboard_layout.addWidget(status_box)
+
+        # Utility buttons row
+        util_row = QHBoxLayout()
+        self.btn_about = QPushButton("About")
+        self.btn_new_patient = QPushButton("New Patient")
+        self.btn_quit_tel = QPushButton("Quit Telemetry")
+        util_row.addWidget(self.btn_about)
+        util_row.addWidget(self.btn_new_patient)
+        util_row.addStretch(1)
+        util_row.addWidget(self.btn_quit_tel)
+        dashboard_layout.addLayout(util_row)
+
         self.dashboard_group.setLayout(dashboard_layout)
 
         # Parameters page
@@ -70,6 +96,10 @@ class MainWindow(QWidget):
         self.stack.addWidget(self.params_page)      # index 1
         self.stack.addWidget(self.pacing_page)      # index 2   <-- fixed .addWidget
 
+        # --- Telemetry service (stub) ---
+        self.telemetry = TelemetryService()
+        self.telemetry.stateChanged.connect(self._on_tel_state)
+
         # --- Connect signals ---
         self.btn_parameters.clicked.connect(
             lambda: self.stack.setCurrentWidget(self.params_page)
@@ -77,6 +107,11 @@ class MainWindow(QWidget):
         self.btn_pacing.clicked.connect(
             lambda: self.stack.setCurrentWidget(self.pacing_page)
         )
+
+        # Utility actions
+        self.btn_about.clicked.connect(self._show_about)
+        self.btn_new_patient.clicked.connect(self._new_patient)
+        self.btn_quit_tel.clicked.connect(self._quit_telemetry)
 
         # Back signals from subpages
         self.params_page.goHome.connect(
@@ -106,5 +141,48 @@ class MainWindow(QWidget):
             self.stack.setVisible(True)
             self.stack.setCurrentWidget(self.dashboard_group)
             self.welcome_label.setText(f"Welcome, {user}!")
+            # Start a simulated telemetry session with a placeholder device id
+            self.telemetry.start_session(device_id="PG-TEST-001")
         else:
             QMessageBox.warning(self, "Login Failed", "Invalid username or password.")
+
+    # --- Telemetry/UI helpers ---
+    def _on_tel_state(self, state: str, device_id, note):
+        self.lbl_comm.setText(f"Telemetry: {state}")
+        self.lbl_device.setText(f"Device: {device_id or '—'}")
+        self.lbl_note.setText(note or "")
+
+    def _show_about(self):
+        info = {
+            "app_model": "PACEMAKER-DCM",
+            "app_version": "0.1.0",
+            "dcm_serial": "DCM-0001",
+            "institution": "McMaster University",
+        }
+        cfg_path = os.path.join(os.path.dirname(__file__), "..", "dcm_info.json")
+        try:
+            cfg_path = os.path.normpath(cfg_path)
+            if os.path.exists(cfg_path):
+                with open(cfg_path, "r") as f:
+                    data = json.load(f)
+                    info.update({k: v for k, v in data.items() if v})
+        except Exception:
+            pass
+        text = (
+            f"Application model: {info['app_model']}\n"
+            f"Software version: {info['app_version']}\n"
+            f"DCM serial: {info['dcm_serial']}\n"
+            f"Institution: {info['institution']}"
+        )
+        QMessageBox.information(self, "About", text)
+
+    def _new_patient(self):
+        # End current session but keep app running; next session may be a new device
+        self.telemetry.end_session()
+        # Clear UI extras as part of new workflow
+        self.lbl_note.clear()
+        QMessageBox.information(self, "New Patient", "Ready to interrogate a new device.")
+
+    def _quit_telemetry(self):
+        self.telemetry.end_session()
+        QMessageBox.information(self, "Telemetry", "Telemetry session ended.")
