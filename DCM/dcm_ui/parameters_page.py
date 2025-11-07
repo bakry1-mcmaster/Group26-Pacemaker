@@ -1,4 +1,7 @@
-# DEFUNCT - moved to mode_parameters_page.py
+# 
+# DEPRECIATED - moved to mode_parameters_page.py follwoing deliverable 1 feedback
+# 
+
 import json
 import os
 from dataclasses import dataclass, asdict
