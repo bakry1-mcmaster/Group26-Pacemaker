@@ -1,5 +1,4 @@
-"""UI for entering and validating programmable parameters."""
-
+# DEFUNCT - moved to mode_parameters_page.py
 import json
 import os
 from dataclasses import dataclass, asdict
@@ -27,7 +26,7 @@ class PacingParams:
     url_bpm: int = 120  # Upper Rate Limit
 
     # Atrial
-    a_amp_mV: float = 3000.0  # 500-7000 mV suggested
+    a_amp_mV: float = 3000.0 
     a_pw_ms: float = 0.4  # 0.1-1.9 ms
 
     # Ventricular

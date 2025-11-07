@@ -1,8 +1,4 @@
-# File: dcm_ui/pacing_modes.py
-# - Part 1 pacing modes selection (AOO, VOO, AAI, VVI)
-# - Minimal UI: radio buttons + Save + Back
-# - Persists to working-directory JSON: dcm_mode.json
-
+# DEFUNCT - moved to mode_parameters_page.py
 import json
 import os
 from dataclasses import dataclass, asdict
@@ -50,9 +46,13 @@ class PacingModesPage(QWidget):
         box.setLayout(box_layout)
 
         self.rb_aoo = QRadioButton("AOO")
+        # LRL, URL, AA, APW
         self.rb_voo = QRadioButton("VOO")
+        # LRL, URL, VA, VPW
         self.rb_aai = QRadioButton("AAI")
+        # LRL, URL, AA, APW, AS, ARP, PVARP, Hys, RS 
         self.rb_vvi = QRadioButton("VVI")
+        # LRL, URL, VA, VPW, VS, VRP, Hys, RS
 
         box_layout.addWidget(self.rb_aoo)
         box_layout.addWidget(self.rb_voo)

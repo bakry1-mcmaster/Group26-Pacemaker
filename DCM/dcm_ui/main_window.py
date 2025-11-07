@@ -3,8 +3,7 @@ from PyQt5.QtWidgets import (
     QMessageBox, QGroupBox, QStackedWidget, QVBoxLayout, QHBoxLayout
 )
 from dcm_core.user_manager import UserManager
-from dcm_ui.parameters_page import ParametersPage
-from dcm_ui.pacing_modes import PacingModesPage
+from dcm_ui.mode_parameters_page import ModeParametersPage
 from dcm_core.telemetry import TelemetryService, TelemetryState
 import json, os
 
@@ -54,11 +53,8 @@ class MainWindow(QWidget):
         self.welcome_label = QLabel("")
         dashboard_layout.addWidget(self.welcome_label)
 
-        self.btn_pacing = QPushButton("Pacing Modes")
-        dashboard_layout.addWidget(self.btn_pacing)
-
-        self.btn_parameters = QPushButton("Parameters")
-        dashboard_layout.addWidget(self.btn_parameters)
+        self.btn_modes_parameters = QPushButton("Modes and Parameters")
+        dashboard_layout.addWidget(self.btn_modes_parameters)
 
         # Status/Telemetry panel
         status_box = QGroupBox("Status")
@@ -76,9 +72,11 @@ class MainWindow(QWidget):
         # Utility buttons row
         util_row = QHBoxLayout()
         self.btn_about = QPushButton("About")
+        self.btn_set_clock = QPushButton("Set Clock")
         self.btn_new_patient = QPushButton("New Patient")
         self.btn_quit_tel = QPushButton("Quit Telemetry")
         util_row.addWidget(self.btn_about)
+        util_row.addWidget(self.btn_set_clock)
         util_row.addWidget(self.btn_new_patient)
         util_row.addStretch(1)
         util_row.addWidget(self.btn_quit_tel)
@@ -86,40 +84,34 @@ class MainWindow(QWidget):
 
         self.dashboard_group.setLayout(dashboard_layout)
 
-        # Parameters page
-        self.params_page = ParametersPage(self)
+        # Combined page
+        self.mode_params_page = ModeParametersPage(self)
 
-        # Pacing modes page
-        self.pacing_page = PacingModesPage(self)
-
-        self.stack.addWidget(self.dashboard_group)  # index 0
-        self.stack.addWidget(self.params_page)      # index 1
-        self.stack.addWidget(self.pacing_page)      # index 2   <-- fixed .addWidget
+        self.stack.addWidget(self.dashboard_group)   # index 0
+        self.stack.addWidget(self.mode_params_page)  # index 1
 
         # --- Telemetry service (stub) ---
         self.telemetry = TelemetryService()
         self.telemetry.stateChanged.connect(self._on_tel_state)
 
         # --- Connect signals ---
-        self.btn_parameters.clicked.connect(
-            lambda: self.stack.setCurrentWidget(self.params_page)
+        # Both buttons route to the combined page
+        self.btn_modes_parameters.clicked.connect(
+            lambda: self.stack.setCurrentWidget(self.mode_params_page)
         )
-        self.btn_pacing.clicked.connect(
-            lambda: self.stack.setCurrentWidget(self.pacing_page)
-        )
+
 
         # Utility actions
         self.btn_about.clicked.connect(self._show_about)
+        self.btn_set_clock.clicked.connect(self._set_clock)
         self.btn_new_patient.clicked.connect(self._new_patient)
         self.btn_quit_tel.clicked.connect(self._quit_telemetry)
 
         # Back signals from subpages
-        self.params_page.goHome.connect(
-            lambda: self.stack.setCurrentWidget(self.dashboard_group)
-        )
-        self.pacing_page.goHome.connect(
-            lambda: self.stack.setCurrentWidget(self.dashboard_group)
-        )
+        if hasattr(self.mode_params_page, "goHome"):
+            self.mode_params_page.goHome.connect(
+                lambda: self.stack.setCurrentWidget(self.dashboard_group)
+            )
 
     # --- Event Handlers ---
     def open_register(self):
@@ -175,6 +167,9 @@ class MainWindow(QWidget):
             f"Institution: {info['institution']}"
         )
         QMessageBox.information(self, "About", text)
+        
+    def _set_clock(self):
+        QMessageBox.information(self, "Set Clock", "TODO: set clock")
 
     def _new_patient(self):
         # End current session but keep app running; next session may be a new device
