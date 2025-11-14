@@ -90,13 +90,11 @@ class MainWindow(QWidget):
         self.btn_set_clock = QPushButton("Set Clock")
         self.btn_new_patient = QPushButton("New Patient")
         self.btn_accessibility = QPushButton("Accessibility")
-        self.btn_quit_tel = QPushButton("Quit Telemetry")
         util_row.addWidget(self.btn_about)
         util_row.addWidget(self.btn_set_clock)
         util_row.addWidget(self.btn_new_patient)
         util_row.addWidget(self.btn_accessibility)
         util_row.addStretch(1)
-        util_row.addWidget(self.btn_quit_tel)
         dashboard_layout.addLayout(util_row)
 
         self.dashboard_group.setLayout(dashboard_layout)
@@ -129,7 +127,6 @@ class MainWindow(QWidget):
         self.btn_set_clock.clicked.connect(self._set_clock)
         self.btn_new_patient.clicked.connect(self._new_patient)
         self.btn_accessibility.clicked.connect(self.mode_params_page.open_accessibility_dialog)
-        self.btn_quit_tel.clicked.connect(self._toggle_connection)
         self.btn_toggle_comm.clicked.connect(self._toggle_connection)
         self.btn_refresh_ports.clicked.connect(self._refresh_ports)
 
@@ -207,11 +204,9 @@ class MainWindow(QWidget):
         QMessageBox.information(self, "Set Clock", f"Time set as: {now}")
 
     def _new_patient(self):
-        # End current session but keep app running; next session may be a new device
-        self.telemetry.end_session()
-        # Clear UI extras as part of new workflow
-        self.lbl_note.clear()
-        QMessageBox.information(self, "New Patient", "Ready to interrogate a new device.")
+        # Clear contextual notes so the clinician can start fresh
+        self.lbl_note.setText("Ready to interrogate a new device.")
+        QMessageBox.information(self, "New Patient", "Patient context reset. Connect telemetry when ready.")
 
     def _toggle_connection(self):
         if self.telemetry.status().state == TelemetryState.DISCONNECTED:
@@ -221,15 +216,13 @@ class MainWindow(QWidget):
                 return
             self.telemetry.configure_serial(port)
             if self.telemetry.connect_serial():
-                self.btn_toggle_comm.setText("Disconnect")
-                self.btn_quit_tel.setText("Disconnect")
+                self.btn_toggle_comm.setText("Disconnect Telemetry")
             else:
                 self.lbl_note.setText("UART connection failed.")
         else:
             self.telemetry.end_session()
             self.lbl_note.setText("Telemetry session ended.")
-            self.btn_toggle_comm.setText("Connect")
-            self.btn_quit_tel.setText("Connect")
+            self.btn_toggle_comm.setText("Connect Telemetry")
 
     def _on_serial_connected(self, port: str):
         self.lbl_note.setText(f"UART connected on {port}.")
@@ -241,6 +234,10 @@ class MainWindow(QWidget):
         self.lbl_note.setText(message)
         QMessageBox.warning(self, "UART Error", message)
 
+    def _on_raw_data(self, data: bytes):
+        # Placeholder hook; could be extended to parse egrams/echo packets.
+        self.lbl_note.setText(f"RX {len(data)} bytes")
+
     def _apply_global_font(self, family: str, size: int):
         from PyQt5.QtGui import QFont
         from PyQt5.QtWidgets import QApplication
@@ -250,3 +247,17 @@ class MainWindow(QWidget):
         if app:
             app.setFont(font)
         self.setFont(font)
+
+    def _refresh_ports(self):
+        self.port_combo.clear()
+        try:
+            from serial.tools import list_ports
+            ports = list_ports.comports()
+        except Exception:
+            ports = []
+        if not ports:
+            self.port_combo.addItem("No ports detected", None)
+            return
+        for info in ports:
+            label = f"{info.device} ({info.description})"
+            self.port_combo.addItem(label, info.device)
