@@ -10,7 +10,7 @@ import os
 from dataclasses import dataclass, asdict
 
 from PyQt5.QtCore import pyqtSignal
-from PyQt5.QtGui import QIntValidator, QDoubleValidator
+from PyQt5.QtGui import QIntValidator, QFont
 from PyQt5.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -23,10 +23,38 @@ from PyQt5.QtWidgets import (
     QSizePolicy,
     QCheckBox,
     QComboBox,
+    QDoubleSpinBox,
+    QSpinBox,
+    QDialog,
+    QDialogButtonBox,
+    QFontComboBox,
+    QApplication,
 )
 
 
 PARAMS_FILE = "dcm_params.json"
+
+PACEMAKER_MODES = [
+    "Off",
+    "AAT",
+    "VVT",
+    "AOO",
+    "AAI",
+    "VOO",
+    "VVI",
+    "VDD",
+    "DOO",
+    "DDI",
+    "DDD",
+    "AOOR",
+    "AAIR",
+    "VOOR",
+    "VVIR",
+    "VDDR",
+    "DOOR",
+    "DDIR",
+    "DDDR",
+]
 
 
 @dataclass
@@ -35,19 +63,19 @@ class PacingParams:
     lrl_ppm: int = 60  # Lower Rate Limit
     url_ppm: int = 120  # Upper Rate Limit
 
-    # Atrial
+    # Atrial (stored in millivolts for file compatibility)
     a_amp_mV: float = 3000.0
-    a_pw_ms: float = 0.4
+    a_pw_ms: int = 1  # 1-30 ms
 
     # Ventricular
     v_amp_mV: float = 3500.0
-    v_pw_ms: float = 0.4
+    v_pw_ms: int = 1
 
     # Refractory
     arp_ms: int = 250
     vrp_ms: int = 320
 
-    # Sensing (mV)
+    # Sensing (V)
     a_sense_mV: float = 2.5
     v_sense_mV: float = 2.5
 
@@ -76,15 +104,21 @@ class PacingParams:
 
 class ModeParametersPage(QWidget):
     goHome = pyqtSignal()
+    fontPreferencesChanged = pyqtSignal(str, int)
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("ModeParametersPage")
+        base_font = self.font()
+        self._font_family = base_font.family()
+        self._font_size = base_font.pointSize() or 12
 
         # Mode → parameter keys (see Class documentation)
-        # Supported selectable modes only: AAI, VVI, AOOR, VOOR, AAIR, VVIR, DDD, DDDR
+        # Supported selectable modes only: AOO, AAI, VOO, VVI, AOOR, VOOR, AAIR, VVIR, DDD, DDDR
         self.visible_by_mode = {
+            "AOO":  ["LRL", "URL", "AA", "APW"],
             "AAI":  ["LRL", "URL", "AA", "APW", "AS", "ARP", "PVARP", "HYS", "RS"],
+            "VOO":  ["LRL", "URL", "VA", "VPW"],
             "VVI":  ["LRL", "URL", "VA", "VPW", "VS", "VRP", "HYS", "RS"],
             "AOOR": ["LRL", "URL", "MSR", "AA", "AS", "APW", "AT", "ReacT", "RF", "RespT"],
             "VOOR": ["LRL", "URL", "MSR", "VA", "VPW", "AT", "ReacT", "RF", "RespT"],
@@ -96,6 +130,8 @@ class ModeParametersPage(QWidget):
         }
 
         self.params = self._load()
+        self.telemetry = None
+        self.current_mode = "AAI"
         self._build_ui()
         self._wire()
         self._select_default_mode()
@@ -107,7 +143,9 @@ class ModeParametersPage(QWidget):
         root.setSpacing(8)
 
         # Mode radios row (only requested modes)
+        self.rb_aoo  = QRadioButton("AOO")
         self.rb_aai  = QRadioButton("AAI")
+        self.rb_voo  = QRadioButton("VOO")
         self.rb_vvi  = QRadioButton("VVI")
         self.rb_aoor = QRadioButton("AOOR")
         self.rb_voor = QRadioButton("VOOR")
@@ -116,12 +154,25 @@ class ModeParametersPage(QWidget):
         self.rb_ddd  = QRadioButton("DDD")
         self.rb_dddr = QRadioButton("DDDR")
         self.mode_group = QButtonGroup(self)
-        for rb in (self.rb_aai, self.rb_vvi, self.rb_aoor, self.rb_voor, self.rb_aair, self.rb_vvir, self.rb_ddd, self.rb_dddr):
+        for rb in (
+            self.rb_aoo,
+            self.rb_aai,
+            self.rb_voo,
+            self.rb_vvi,
+            self.rb_aoor,
+            self.rb_voor,
+            self.rb_aair,
+            self.rb_vvir,
+            self.rb_ddd,
+            self.rb_dddr,
+        ):
             self.mode_group.addButton(rb)
             rb.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
 
         mode_row = QHBoxLayout()
+        mode_row.addWidget(self.rb_aoo)
         mode_row.addWidget(self.rb_aai)
+        mode_row.addWidget(self.rb_voo)
         mode_row.addWidget(self.rb_vvi)
         mode_row.addWidget(self.rb_aoor)
         mode_row.addWidget(self.rb_voor)
@@ -144,17 +195,13 @@ class ModeParametersPage(QWidget):
         self.ed_url = QLineEdit(str(self.params.url_ppm))
         self.ed_url.setValidator(QIntValidator(50, 175, self))
 
-        self.ed_a_amp = QLineEdit(str(self.params.a_amp_mV))
-        self.ed_a_amp.setValidator(QDoubleValidator(500.0, 7000.0, 1, self))
+        self.ed_a_amp = self._create_amp_spinbox(self.params.a_amp_mV)
 
-        self.ed_a_pw = QLineEdit(str(self.params.a_pw_ms))
-        self.ed_a_pw.setValidator(QDoubleValidator(0.1, 1.9, 2, self))
+        self.ed_a_pw = self._create_pulse_width_spinbox(self.params.a_pw_ms)
 
-        self.ed_v_amp = QLineEdit(str(self.params.v_amp_mV))
-        self.ed_v_amp.setValidator(QDoubleValidator(500.0, 7000.0, 1, self))
+        self.ed_v_amp = self._create_amp_spinbox(self.params.v_amp_mV)
 
-        self.ed_v_pw = QLineEdit(str(self.params.v_pw_ms))
-        self.ed_v_pw.setValidator(QDoubleValidator(0.1, 1.9, 2, self))
+        self.ed_v_pw = self._create_pulse_width_spinbox(self.params.v_pw_ms)
 
         self.ed_arp = QLineEdit(str(self.params.arp_ms))
         self.ed_arp.setValidator(QIntValidator(150, 500, self))
@@ -163,10 +210,8 @@ class ModeParametersPage(QWidget):
         self.ed_vrp.setValidator(QIntValidator(150, 500, self))
 
         # Additional sensing
-        self.ed_as_mv = QLineEdit(str(self.params.a_sense_mV))
-        self.ed_as_mv.setValidator(QDoubleValidator(0.0, 5.0, 1, self))
-        self.ed_vs_mv = QLineEdit(str(self.params.v_sense_mV))
-        self.ed_vs_mv.setValidator(QDoubleValidator(0.0, 5.0, 1, self))
+        self.ed_as_mv = self._create_sensitivity_spinbox(self.params.a_sense_mV)
+        self.ed_vs_mv = self._create_sensitivity_spinbox(self.params.v_sense_mV)
 
         # PVARP + extension
         self.ed_pvarp = QLineEdit(str(self.params.pvarp_ms))
@@ -231,14 +276,14 @@ class ModeParametersPage(QWidget):
         self.row_widgets = {
             "LRL": make_row("Lower Rate Limit (ppm)", self.ed_lrl),
             "URL": make_row("Upper Rate Limit (ppm)", self.ed_url),
-            "AA": make_row("Atrial Amplitude (mV)", self.ed_a_amp),
+            "AA": make_row("Atrial Amplitude (V)", self.ed_a_amp),
             "APW": make_row("Atrial Pulse Width (ms)", self.ed_a_pw),
-            "VA": make_row("Ventricular Amplitude (mV)", self.ed_v_amp),
+            "VA": make_row("Ventricular Amplitude (V)", self.ed_v_amp),
             "VPW": make_row("Ventricular Pulse Width (ms)", self.ed_v_pw),
             "ARP": make_row("ARP (ms)", self.ed_arp),
             "VRP": make_row("VRP (ms)", self.ed_vrp),
-            "AS": make_row("Atrial Sensitivity (mV)", self.ed_as_mv),
-            "VS": make_row("Ventricular Sensitivity (mV)", self.ed_vs_mv),
+            "AS": make_row("Atrial Sensitivity (V)", self.ed_as_mv),
+            "VS": make_row("Ventricular Sensitivity (V)", self.ed_vs_mv),
             "PVARP": make_row("PVARP (ms)", self.ed_pvarp),
             "PVARExt": make_row("PVARP Extension (ms)", self.ed_pvarext),
             "HYS": make_row("Hysteresis", self.cb_hys),
@@ -296,11 +341,74 @@ class ModeParametersPage(QWidget):
 
         root.addStretch(1)
 
-    def _wire(self):
-        for rb in (self.rb_aai, self.rb_vvi, self.rb_aoor, self.rb_voor, self.rb_aair, self.rb_vvir, self.rb_ddd, self.rb_dddr):
-            rb.toggled.connect(lambda checked, m=rb.text(): checked and self.update_visible_params(m))
+    def _create_amp_spinbox(self, stored_mV: float) -> QDoubleSpinBox:
+        spin = QDoubleSpinBox(self)
+        spin.setDecimals(1)
+        spin.setRange(0.0, 5.0)
+        spin.setSingleStep(0.1)
+        spin.setKeyboardTracking(False)
+        spin.setSpecialValueText("Reg Off")
+        spin.setValue(self._mv_to_v(stored_mV))
+        return spin
 
-        for w in (
+    def _create_pulse_width_spinbox(self, stored_ms: float) -> QSpinBox:
+        spin = QSpinBox(self)
+        spin.setRange(1, 30)
+        spin.setSingleStep(1)
+        spin.setValue(self._clamp_int(stored_ms, 1, 30))
+        return spin
+
+    def _create_sensitivity_spinbox(self, stored_v: float) -> QDoubleSpinBox:
+        spin = QDoubleSpinBox(self)
+        spin.setDecimals(1)
+        spin.setRange(0.0, 5.0)
+        spin.setSingleStep(0.1)
+        spin.setKeyboardTracking(False)
+        spin.setValue(self._clamp_float(stored_v, 0.0, 5.0))
+        return spin
+
+    def open_accessibility_dialog(self):
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Accessibility")
+        layout = QVBoxLayout(dialog)
+
+        layout.addWidget(QLabel("Interface Font:", dialog))
+        font_combo = QFontComboBox(dialog)
+        font_combo.setCurrentFont(QFont(self._font_family, self._font_size))
+        layout.addWidget(font_combo)
+
+        size_row = QHBoxLayout()
+        size_row.addWidget(QLabel("Font Size:", dialog))
+        size_spin = QSpinBox(dialog)
+        size_spin.setRange(8, 32)
+        size_spin.setValue(self._font_size)
+        size_row.addWidget(size_spin)
+        size_row.addStretch(1)
+        layout.addLayout(size_row)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, parent=dialog)
+        layout.addWidget(buttons)
+
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+
+        if dialog.exec_() == QDialog.Accepted:
+            self._apply_font_preferences(font_combo.currentFont().family(), size_spin.value())
+
+    def _apply_font_preferences(self, family: str = None, size: int = None):
+        if family is not None:
+            self._font_family = family
+        if size is not None:
+            self._font_size = size
+        font = QFont(self._font_family)
+        font.setPointSize(int(self._font_size))
+        self.setFont(font)
+        self.fontPreferencesChanged.emit(self._font_family, self._font_size)
+
+    def _wire(self):
+        self.mode_group.buttonClicked.connect(lambda btn: self.update_visible_params(btn.text()))
+
+        inputs = (
             self.ed_lrl,
             self.ed_url,
             self.ed_a_amp,
@@ -320,12 +428,20 @@ class ModeParametersPage(QWidget):
             self.ed_favd,
             self.ed_davd,
             self.ed_savd,
-        ):
-            w.textChanged.connect(self._clear_status)
+        )
+        for w in inputs:
+            if isinstance(w, QLineEdit):
+                w.textChanged.connect(self._clear_status)
+            else:
+                w.valueChanged.connect(self._clear_status)
 
         self.btn_save.clicked.connect(self._save)
         self.btn_reset.clicked.connect(self._reset)
         self.btn_back.clicked.connect(self.goHome.emit)
+        self._apply_font_preferences()
+
+    def setTelemetry(self, telemetry):
+        self.telemetry = telemetry
 
     # --- Behavior ---
     def _select_default_mode(self):
@@ -333,6 +449,7 @@ class ModeParametersPage(QWidget):
         self.update_visible_params("AAI")
 
     def update_visible_params(self, mode: str):
+        self.current_mode = mode
         allowed = set(self.visible_by_mode.get(mode, []))
         for key, row in self.row_widgets.items():
             row.setVisible(key in allowed)
@@ -342,6 +459,38 @@ class ModeParametersPage(QWidget):
     def _clear_status(self):
         if hasattr(self, "lbl_status"):
             self.lbl_status.clear()
+
+    @staticmethod
+    def _mv_to_v(value: float) -> float:
+        try:
+            mv = float(value)
+        except (TypeError, ValueError):
+            return 0.0
+        return round(max(0.0, min(5000.0, mv)) / 1000.0, 1)
+
+    @staticmethod
+    def _v_to_mv(value: float) -> int:
+        try:
+            v = float(value)
+        except (TypeError, ValueError):
+            return 0
+        return int(round(max(0.0, min(5.0, v)) * 1000))
+
+    @staticmethod
+    def _clamp_int(value, minimum: int, maximum: int) -> int:
+        try:
+            v = int(round(float(value)))
+        except (TypeError, ValueError):
+            return minimum
+        return max(minimum, min(maximum, v))
+
+    @staticmethod
+    def _clamp_float(value, minimum: float, maximum: float) -> float:
+        try:
+            v = float(value)
+        except (TypeError, ValueError):
+            return minimum
+        return max(minimum, min(maximum, v))
 
     # --- Model IO ---
     def _load(self) -> PacingParams:
@@ -357,15 +506,15 @@ class ModeParametersPage(QWidget):
     def _apply_to_model(self):
         self.params.lrl_ppm = int(self.ed_lrl.text())
         self.params.url_ppm = int(self.ed_url.text())
-        self.params.a_amp_mV = float(self.ed_a_amp.text())
-        self.params.a_pw_ms = float(self.ed_a_pw.text())
-        self.params.v_amp_mV = float(self.ed_v_amp.text())
-        self.params.v_pw_ms = float(self.ed_v_pw.text())
+        self.params.a_amp_mV = self._v_to_mv(self.ed_a_amp.value())
+        self.params.a_pw_ms = int(self.ed_a_pw.value())
+        self.params.v_amp_mV = self._v_to_mv(self.ed_v_amp.value())
+        self.params.v_pw_ms = int(self.ed_v_pw.value())
         self.params.arp_ms = int(self.ed_arp.text())
         self.params.vrp_ms = int(self.ed_vrp.text())
         # New
-        self.params.a_sense_mV = float(self.ed_as_mv.text())
-        self.params.v_sense_mV = float(self.ed_vs_mv.text())
+        self.params.a_sense_mV = float(self.ed_as_mv.value())
+        self.params.v_sense_mV = float(self.ed_vs_mv.value())
         self.params.pvarp_ms = int(self.ed_pvarp.text())
         self.params.pvarp_ext_ms = int(self.ed_pvarext.text())
         self.params.hys_on = bool(self.cb_hys.isChecked())
@@ -379,6 +528,31 @@ class ModeParametersPage(QWidget):
         self.params.davd_ms = int(self.ed_davd.text())
         self.params.savd_ms = int(self.ed_savd.text())
 
+    def _transmit_params(self):
+        if not self.telemetry:
+            return
+        try:
+            lrl = max(1, int(self.ed_lrl.text()))
+        except ValueError:
+            lrl = 60
+        lowrate_interval = int(round(60000 / lrl))
+        try:
+            mode_code = PACEMAKER_MODES.index(self.current_mode)
+        except ValueError:
+            mode_code = PACEMAKER_MODES.index("AAI")
+        payload = {
+            "pacing_state": 0,  # PERMANENT
+            "mode": mode_code,
+            "hysteresis": self.cb_hys.isChecked(),
+            "hysteresis_interval": self.params.pvarp_ms,
+            "lowrate_interval": lowrate_interval,
+            "v_amp_mV": self.params.v_amp_mV,
+            "v_width_ms": self.params.v_pw_ms,
+            "vrp_ms": self.params.vrp_ms,
+        }
+        self.telemetry.send_params(payload)
+        self.telemetry.request_echo()
+
     def _reset(self):
         self.params = PacingParams()
         self._refresh_fields()
@@ -388,15 +562,15 @@ class ModeParametersPage(QWidget):
     def _refresh_fields(self):
         self.ed_lrl.setText(str(self.params.lrl_ppm))
         self.ed_url.setText(str(self.params.url_ppm))
-        self.ed_a_amp.setText(str(self.params.a_amp_mV))
-        self.ed_a_pw.setText(str(self.params.a_pw_ms))
-        self.ed_v_amp.setText(str(self.params.v_amp_mV))
-        self.ed_v_pw.setText(str(self.params.v_pw_ms))
+        self.ed_a_amp.setValue(self._mv_to_v(self.params.a_amp_mV))
+        self.ed_a_pw.setValue(self._clamp_int(self.params.a_pw_ms, 1, 30))
+        self.ed_v_amp.setValue(self._mv_to_v(self.params.v_amp_mV))
+        self.ed_v_pw.setValue(self._clamp_int(self.params.v_pw_ms, 1, 30))
         self.ed_arp.setText(str(self.params.arp_ms))
         self.ed_vrp.setText(str(self.params.vrp_ms))
         # New
-        self.ed_as_mv.setText(str(self.params.a_sense_mV))
-        self.ed_vs_mv.setText(str(self.params.v_sense_mV))
+        self.ed_as_mv.setValue(self._clamp_float(self.params.a_sense_mV, 0.0, 5.0))
+        self.ed_vs_mv.setValue(self._clamp_float(self.params.v_sense_mV, 0.0, 5.0))
         self.ed_pvarp.setText(str(self.params.pvarp_ms))
         self.ed_pvarext.setText(str(self.params.pvarp_ext_ms))
         self.cb_hys.setChecked(self.params.hys_on)
@@ -414,6 +588,8 @@ class ModeParametersPage(QWidget):
 
     def _validate_all(self) -> bool:
         def ok_line(w):
+            if not isinstance(w, QLineEdit):
+                return True
             v = w.validator()
             if v is None:
                 return True
@@ -464,5 +640,6 @@ class ModeParametersPage(QWidget):
                 json.dump(asdict(self.params), f, indent=2)
             if hasattr(self, "lbl_status"):
                 self.lbl_status.setText("Parameters saved.")
+            self._transmit_params()
         except Exception:
             pass

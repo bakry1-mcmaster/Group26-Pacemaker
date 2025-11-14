@@ -1,6 +1,7 @@
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QLabel, QLineEdit, QPushButton,
-    QMessageBox, QGroupBox, QStackedWidget, QVBoxLayout, QHBoxLayout
+    QMessageBox, QGroupBox, QStackedWidget, QVBoxLayout, QHBoxLayout,
+    QComboBox,
 )
 from dcm_core.user_manager import UserManager
 from dcm_ui.mode_parameters_page import ModeParametersPage
@@ -30,11 +31,15 @@ class MainWindow(QWidget):
         self.login_pass.setPlaceholderText("Password")
         self.login_pass.setEchoMode(QLineEdit.Password)
         login_layout.addWidget(self.login_pass)
+        
+        quick_admin = QPushButton("Debug Admin Login")
+        quick_admin.clicked.connect(self._login_admin)
+        login_layout.addWidget(quick_admin)
 
         login_button = QPushButton("Login")
         login_button.clicked.connect(self.handle_login)
         login_layout.addWidget(login_button)
-
+        
         self.btn_register = QPushButton("Register")
         self.btn_register.clicked.connect(self.open_register)
         login_layout.addWidget(self.btn_register)
@@ -66,6 +71,16 @@ class MainWindow(QWidget):
         status_layout.addWidget(self.lbl_comm)
         status_layout.addWidget(self.lbl_device)
         status_layout.addWidget(self.lbl_note)
+        port_row = QHBoxLayout()
+        port_row.addWidget(QLabel("Communication Port:"))
+        self.port_combo = QComboBox()
+        self._refresh_ports()
+        port_row.addWidget(self.port_combo)
+        self.btn_toggle_comm = QPushButton("Connect Telemetry")
+        self.btn_refresh_ports = QPushButton("Refresh")
+        port_row.addWidget(self.btn_toggle_comm)
+        port_row.addWidget(self.btn_refresh_ports)
+        status_layout.addLayout(port_row)
         status_box.setLayout(status_layout)
         dashboard_layout.addWidget(status_box)
 
@@ -74,10 +89,12 @@ class MainWindow(QWidget):
         self.btn_about = QPushButton("About")
         self.btn_set_clock = QPushButton("Set Clock")
         self.btn_new_patient = QPushButton("New Patient")
+        self.btn_accessibility = QPushButton("Accessibility")
         self.btn_quit_tel = QPushButton("Quit Telemetry")
         util_row.addWidget(self.btn_about)
         util_row.addWidget(self.btn_set_clock)
         util_row.addWidget(self.btn_new_patient)
+        util_row.addWidget(self.btn_accessibility)
         util_row.addStretch(1)
         util_row.addWidget(self.btn_quit_tel)
         dashboard_layout.addLayout(util_row)
@@ -86,6 +103,7 @@ class MainWindow(QWidget):
 
         # Combined page
         self.mode_params_page = ModeParametersPage(self)
+        self.mode_params_page.fontPreferencesChanged.connect(self._apply_global_font)
 
         self.stack.addWidget(self.dashboard_group)   # index 0
         self.stack.addWidget(self.mode_params_page)  # index 1
@@ -93,6 +111,11 @@ class MainWindow(QWidget):
         # --- Telemetry service (stub) ---
         self.telemetry = TelemetryService()
         self.telemetry.stateChanged.connect(self._on_tel_state)
+        self.telemetry.serialConnected.connect(self._on_serial_connected)
+        self.telemetry.serialDisconnected.connect(self._on_serial_disconnected)
+        self.telemetry.serialError.connect(self._on_serial_error)
+        self.telemetry.rawDataReceived.connect(self._on_raw_data)
+        self.mode_params_page.setTelemetry(self.telemetry)
 
         # --- Connect signals ---
         # Both buttons route to the combined page
@@ -105,13 +128,17 @@ class MainWindow(QWidget):
         self.btn_about.clicked.connect(self._show_about)
         self.btn_set_clock.clicked.connect(self._set_clock)
         self.btn_new_patient.clicked.connect(self._new_patient)
-        self.btn_quit_tel.clicked.connect(self._quit_telemetry)
+        self.btn_accessibility.clicked.connect(self.mode_params_page.open_accessibility_dialog)
+        self.btn_quit_tel.clicked.connect(self._toggle_connection)
+        self.btn_toggle_comm.clicked.connect(self._toggle_connection)
+        self.btn_refresh_ports.clicked.connect(self._refresh_ports)
 
         # Back signals from subpages
         if hasattr(self.mode_params_page, "goHome"):
             self.mode_params_page.goHome.connect(
                 lambda: self.stack.setCurrentWidget(self.dashboard_group)
             )
+        self._apply_global_font(self.mode_params_page._font_family, self.mode_params_page._font_size)
 
     # --- Event Handlers ---
     def open_register(self):
@@ -137,6 +164,12 @@ class MainWindow(QWidget):
             self.telemetry.start_session(device_id="PG-TEST-001")
         else:
             QMessageBox.warning(self, "Login Failed", "Invalid username or password.")
+
+    def _login_admin(self):
+        """Convenience helper for testing: logs in as admin/password if available."""
+        self.login_user.setText("admin")
+        self.login_pass.setText("password")
+        self.handle_login()
 
     # --- Telemetry/UI helpers ---
     def _on_tel_state(self, state: str, device_id, note):
@@ -169,7 +202,9 @@ class MainWindow(QWidget):
         QMessageBox.information(self, "About", text)
         
     def _set_clock(self):
-        QMessageBox.information(self, "Set Clock", "TODO: set clock")
+        from datetime import datetime
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        QMessageBox.information(self, "Set Clock", f"Time set as: {now}")
 
     def _new_patient(self):
         # End current session but keep app running; next session may be a new device
@@ -178,6 +213,40 @@ class MainWindow(QWidget):
         self.lbl_note.clear()
         QMessageBox.information(self, "New Patient", "Ready to interrogate a new device.")
 
-    def _quit_telemetry(self):
-        self.telemetry.end_session()
-        QMessageBox.information(self, "Telemetry", "Telemetry session ended.")
+    def _toggle_connection(self):
+        if self.telemetry.status().state == TelemetryState.DISCONNECTED:
+            port = self.port_combo.currentData()
+            if not port:
+                QMessageBox.warning(self, "Telemetry", "Select a serial port first.")
+                return
+            self.telemetry.configure_serial(port)
+            if self.telemetry.connect_serial():
+                self.btn_toggle_comm.setText("Disconnect")
+                self.btn_quit_tel.setText("Disconnect")
+            else:
+                self.lbl_note.setText("UART connection failed.")
+        else:
+            self.telemetry.end_session()
+            self.lbl_note.setText("Telemetry session ended.")
+            self.btn_toggle_comm.setText("Connect")
+            self.btn_quit_tel.setText("Connect")
+
+    def _on_serial_connected(self, port: str):
+        self.lbl_note.setText(f"UART connected on {port}.")
+
+    def _on_serial_disconnected(self):
+        self.lbl_note.setText("UART disconnected.")
+
+    def _on_serial_error(self, message: str):
+        self.lbl_note.setText(message)
+        QMessageBox.warning(self, "UART Error", message)
+
+    def _apply_global_font(self, family: str, size: int):
+        from PyQt5.QtGui import QFont
+        from PyQt5.QtWidgets import QApplication
+
+        font = QFont(family, size)
+        app = QApplication.instance()
+        if app:
+            app.setFont(font)
+        self.setFont(font)
