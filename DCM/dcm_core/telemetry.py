@@ -51,6 +51,10 @@ class TelemetryService(QObject):
     serialError = pyqtSignal(str)
     rawDataReceived = pyqtSignal(bytes)
 
+    #EGRAM
+    egramSampleReceived = pyqtSignal(object, object, object, object)
+
+
     def __init__(self):
         super().__init__()
         self._last_device_id: Optional[str] = None
@@ -61,6 +65,10 @@ class TelemetryService(QObject):
         self._serial = None
         self._rx_thread: Optional[Thread] = None
         self._stop_event = Event()
+
+        #EGRAM
+        self._rx_buf = bytearray() #buffer to accumulate egram bytes
+        self._egram_streaming = False
 
     def status(self) -> TelemetryStatus:
         return TelemetryStatus(self._state, self._device_id)
@@ -140,6 +148,9 @@ class TelemetryService(QObject):
                 break
             if data:
                 self.rawDataReceived.emit(bytes(data))
+
+                self._handle_rx_bytes(data)
+
         if unexpected:
             self.serialDisconnected.emit()
 
@@ -178,8 +189,12 @@ class TelemetryService(QObject):
     def request_egram(self):
         self.send_packet(self._build_simple_frame(FN_EGRAM))
 
+        self._egram_streaming = True
+
     def stop_egram(self):
         self.send_packet(self._build_simple_frame(FN_ESTOP))
+
+        self._egram_streaming = False
 
     def _build_simple_frame(self, fn_code: int) -> bytes:
         header = [SYNC, fn_code, fn_code ^ SYNC ^ SOH]
@@ -221,3 +236,29 @@ class TelemetryService(QObject):
         if self._device_id is None:
             return
         self._emit(TelemetryState.NOISE if is_noisy else TelemetryState.CONNECTED)
+
+    def _handle_rx_bytes(self, data: bytes):
+        self._rx_buf.extend(data)
+
+        # dual-chamber frames (8 bytes)
+        while len(self._rx_buf) >= 4:
+            if len(self._rx_buf) >= 8:  
+                # atrial + ventricular
+                atr = int.from_bytes(self._rx_buf[0:2], 'little')
+                amk = self._rx_buf[2:4].decode('ascii', errors='ignore')
+                ven = int.from_bytes(self._rx_buf[4:6], 'little')
+                vmk = self._rx_buf[6:8].decode('ascii', errors='ignore')
+                del self._rx_buf[:8]
+                self.egramSampleReceived.emit(
+                    atr, amk, ven, vmk
+                )
+            else:
+                # atrial or ventricular (4 bytes)
+                ven = int.from_bytes(self._rx_buf[0:2], 'little')
+                vmk = self._rx_buf[2:4].decode('ascii', errors='ignore')
+                del self._rx_buf[:4]
+                self.egramSampleReceived.emit(
+                    None, None, ven, vmk
+                )
+  
+

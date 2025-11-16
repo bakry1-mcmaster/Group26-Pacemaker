@@ -6,6 +6,8 @@ from PyQt5.QtWidgets import (
 from dcm_core.user_manager import UserManager
 from dcm_ui.mode_parameters_page import ModeParametersPage
 from dcm_core.telemetry import TelemetryService, TelemetryState
+from dcm_ui.egram_page import EgramPage
+
 import json, os
 
 class MainWindow(QWidget):
@@ -61,6 +63,11 @@ class MainWindow(QWidget):
         self.btn_modes_parameters = QPushButton("Modes and Parameters")
         dashboard_layout.addWidget(self.btn_modes_parameters)
 
+        self.btn_egram = QPushButton("Egram Viewer")
+        dashboard_layout.addWidget(self.btn_egram)
+
+
+
         # Status/Telemetry panel
         status_box = QGroupBox("Status")
         status_layout = QVBoxLayout()
@@ -103,8 +110,12 @@ class MainWindow(QWidget):
         self.mode_params_page = ModeParametersPage(self)
         self.mode_params_page.fontPreferencesChanged.connect(self._apply_global_font)
 
+        # Egram page
+        self.egram_page = EgramPage(self)
+
         self.stack.addWidget(self.dashboard_group)   # index 0
         self.stack.addWidget(self.mode_params_page)  # index 1
+        self.stack.addWidget(self.egram_page)  # index 1
 
         # --- Telemetry service (stub) ---
         self.telemetry = TelemetryService()
@@ -115,11 +126,19 @@ class MainWindow(QWidget):
         self.telemetry.rawDataReceived.connect(self._on_raw_data)
         self.mode_params_page.setTelemetry(self.telemetry)
 
+        self.egram_page.setTelemetry(self.telemetry)
+
+
         # --- Connect signals ---
         # Both buttons route to the combined page
         self.btn_modes_parameters.clicked.connect(
             lambda: self.stack.setCurrentWidget(self.mode_params_page)
         )
+
+        self.btn_egram.clicked.connect(
+        lambda: self.stack.setCurrentWidget(self.egram_page)
+)
+
 
 
         # Utility actions
@@ -136,6 +155,17 @@ class MainWindow(QWidget):
                 lambda: self.stack.setCurrentWidget(self.dashboard_group)
             )
         self._apply_global_font(self.mode_params_page._font_family, self.mode_params_page._font_size)
+
+        if hasattr(self.mode_params_page, "goHome"):
+            self.mode_params_page.goHome.connect(
+            lambda: self.stack.setCurrentWidget(self.dashboard_group)
+        )
+            
+        if hasattr(self.egram_page, "goHome"):
+            self.egram_page.goHome.connect(
+            lambda: self.stack.setCurrentWidget(self.dashboard_group)
+        )
+
 
     # --- Event Handlers ---
     def open_register(self):
