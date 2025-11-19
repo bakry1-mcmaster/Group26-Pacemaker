@@ -5,6 +5,13 @@ from __future__ import annotations
 from collections import deque
 from typing import Optional
 
+import json
+import os
+from datetime import datetime
+
+from dcm_core.egram_data import ParamsRecorded, EgramRecord, EgramBlock, new_template
+
+
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal
 from PyQt5.QtWidgets import (
     QWidget,
@@ -41,6 +48,14 @@ class EgramPage(QWidget):
         self._timer.setInterval(40)  # ~25 fps
         self._timer.timeout.connect(self._refresh_plot)
         self._timer.start()
+
+        # recording model
+        self._record: Optional[EgramRecord] = None
+        self._block: Optional[EgramBlock] = None
+
+        #user
+        self._username: Optional[str] = None
+
 
     def setTelemetry(self, telemetry: TelemetryService):
         self._telemetry = telemetry
@@ -130,19 +145,86 @@ class EgramPage(QWidget):
         self._atr_buf.clear()
         self._ven_buf.clear()
 
+        #build EgramRecord + initial block
+
+        # load current params (if file missing, use defaults)
+        try:
+            with open("dcm_params.json", "r") as f:
+                params_data = json.load(f)
+            params = ParamsRecorded(**params_data)
+        except Exception:
+            params = ParamsRecorded()
+
+        # load current mode string (if missing, leave as None)
+        mode = None
+        try:
+            with open("dcm_mode.json", "r") as f:
+                mode_data = json.load(f)
+                mode = (mode_data or {}).get("mode")
+        except Exception:
+            pass
+
+        # simple session id based on timestamp
+        session_id = datetime.utcnow().strftime("EGRAM-%Y%m%dT%H%M%S")
+
+        # create record
+        self._record = new_template(
+            session_id=session_id,
+            mode=mode,
+            params=params,
+            user=self._username,          
+            source="simulated",  # !!!hardware!!!
+        )
+
+        if self.rb_both.isChecked():
+            channel = "AV"
+        elif self.rb_atrial.isChecked():
+            channel = "A"
+        else:
+            channel = "V"
+
+        self._block = EgramBlock(
+            channel=channel,
+            sample_rate_Hz=200, #!!!double check what the sample rate is!!!
+        )
+        self._record.blocks.append(self._block)
+
         self._telemetry.request_egram()
         self.btn_start.setEnabled(False)
         self.btn_stop.setEnabled(True)
 
+
     def _stop_egram(self):
         if self._telemetry:
             self._telemetry.stop_egram()
+
         self.btn_start.setEnabled(True)
         self.btn_stop.setEnabled(False)
+
+        # if we have a recording, save it
+        if self._record is not None:
+            fname = f"{self._record.meta.session_id}.json"
+            try:
+                with open(fname, "w") as f:
+                    f.write(self._record.to_json(indent=2))
+            except Exception:
+                pass
+
+            # reset record/block
+            self._record = None
+            self._block = None
+
 
     def _on_egram_sample(self, atr, atr_marker, ven, ven_marker):
         self._atr_buf.append(atr)
         self._ven_buf.append(ven)
+
+        if self._block is not None:
+            # normalize Nones to 0 / "--" so JSON stays clean
+            self._block.atr_samples.append(int(atr) if isinstance(atr, (int, float)) else 0)
+            self._block.ven_samples.append(int(ven) if isinstance(ven, (int, float)) else 0)
+            self._block.atr_markers.append(atr_marker or "--")
+            self._block.ven_markers.append(ven_marker or "--")
 
     # --- plotting ---
     def _refresh_plot(self):
@@ -167,3 +249,7 @@ class EgramPage(QWidget):
             self._ven_curve.setData(x, ven_vals)
         else:
             self._ven_curve.setData([], [])
+
+    
+    def set_username(self, username: Optional[str]):
+        self._username = username

@@ -113,6 +113,8 @@ class MainWindow(QWidget):
         # Egram page
         self.egram_page = EgramPage(self)
 
+        self.current_user = None
+
         self.stack.addWidget(self.dashboard_group)   # index 0
         self.stack.addWidget(self.mode_params_page)  # index 1
         self.stack.addWidget(self.egram_page)  # index 1
@@ -183,10 +185,15 @@ class MainWindow(QWidget):
         user = self.login_user.text()
         password = self.login_pass.text()
         if self.user_manager.login(user, password):
+            self.current_user = user
+
             self.login_group.hide()
             self.stack.setVisible(True)
             self.stack.setCurrentWidget(self.dashboard_group)
             self.welcome_label.setText(f"Welcome, {user}!")
+
+            self.egram_page.set_username(user)
+
             # Start a simulated telemetry session with a placeholder device id
             self.telemetry.start_session(device_id="PG-TEST-001")
         else:
