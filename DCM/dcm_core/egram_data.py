@@ -56,7 +56,7 @@ class EgramMeta:
     session_id: str
     user: Optional[str] = None
     device_id: Optional[str] = None
-    source: str = "simulated"        # "simulated" or "hardware"
+    source: str = "hardware"
     dcm_version: Optional[str] = None
     created_utc: str = field(
         default_factory=lambda: datetime.utcnow().isoformat(timespec="seconds") + "Z"
