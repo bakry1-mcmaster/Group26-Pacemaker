@@ -11,7 +11,7 @@ import json
 import os
 from typing import Optional
 
-from .egram_data import EgramRecord, ParamsSnapshot, new_template
+from .egram_data import EgramRecord, ParamsRecorded, new_template
 
 
 PARAMS_FILE = "dcm_params.json"
