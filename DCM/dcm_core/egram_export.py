@@ -2,7 +2,7 @@
 
 Reads `dcm_params.json` and `dcm_mode.json` from the working directory and
 produces a minimal EgramRecord (no samples) that includes meta, mode, and a
-ParamsSnapshot. Useful for D1 appendices and traceability.
+ParamsRecorded. Useful for D1 appendices and traceability.
 """
 
 from __future__ import annotations
@@ -33,7 +33,7 @@ def export_current_to_json(
     if os.path.exists(PARAMS_FILE):
         with open(PARAMS_FILE, "r") as f:
             params_data = json.load(f)
-    snap = ParamsSnapshot(**params_data) if params_data else ParamsSnapshot()
+    snap = ParamsRecorded(**params_data) if params_data else ParamsRecorded()
 
     # Load mode
     mode = None
@@ -72,7 +72,6 @@ if __name__ == "__main__":
 
     path = export_current_to_json(
         output_path=args.output,
-        session_id=args.session_id,
         user=args.user,
         dcm_version=args.version,
     )

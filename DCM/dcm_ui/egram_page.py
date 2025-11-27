@@ -203,7 +203,12 @@ class EgramPage(QWidget):
 
         # if we have a recording, save it
         if self._record is not None:
-            fname = f"{self._record.meta.session_id}.json"
+            from datetime import datetime
+
+            year_month = datetime.now().strftime("%Y-%m")
+            user = self._username or "User"  
+
+            fname = f"EGRAM_{user}_{year_month}.json"
             try:
                 with open(fname, "w") as f:
                     f.write(self._record.to_json(indent=2))
