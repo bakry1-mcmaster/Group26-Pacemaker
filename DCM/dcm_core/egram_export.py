@@ -24,10 +24,9 @@ def export_current_to_json(
     user: Optional[str] = None,
     dcm_version: Optional[str] = None,
 ) -> str:
-    """Create a minimal EgramRecord JSON capturing current params + mode.
-
-    Returns the written file path.
-    """
+    # Create a minimal EgramRecord JSON capturing current params + mode.
+    # Returns the written file path.
+    
     # Load params
     params_data = {}
     if os.path.exists(PARAMS_FILE):

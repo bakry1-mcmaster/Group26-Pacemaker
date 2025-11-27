@@ -11,17 +11,20 @@ from dcm_ui.egram_page import EgramPage
 import json, os
 
 class MainWindow(QWidget):
+    """Main desktop window for DCM with login, navigation, and telemetry controls."""
+
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Device Controller Monitor")
         self.resize(800, 600)
         self.setMinimumSize(600, 400)
 
+        # UserManager encapsulates credential storage and authentication helpers.
         self.user_manager = UserManager()
         self.main_layout = QVBoxLayout()
         self.setLayout(self.main_layout)
 
-        # --- Login Widgets ---
+        # Login Widgets
         self.login_group = QGroupBox()
         login_layout = QVBoxLayout()
 
@@ -49,12 +52,13 @@ class MainWindow(QWidget):
         self.login_group.setLayout(login_layout)
         self.main_layout.addWidget(self.login_group)
 
-        # --- Stacked Pages (Dashboard + Parameters + Pacing Modes) ---
+        # Stacked Pages (Dashboard + Parameters + Pacing Modes)
+        # Pages start hidden until login succeeds.
         self.stack = QStackedWidget()
         self.main_layout.addWidget(self.stack)
         self.stack.setVisible(False)
 
-        # Dashboard
+        # Dashboard exposes navigation shortcuts and telemetry health.
         self.dashboard_group = QGroupBox("Dashboard")
         dashboard_layout = QVBoxLayout()
         self.welcome_label = QLabel("")
@@ -68,7 +72,7 @@ class MainWindow(QWidget):
 
 
 
-        # Status/Telemetry panel
+        # Status/Telemetry panel keeps clinicians apprised of the UART link.
         status_box = QGroupBox("Status")
         status_layout = QVBoxLayout()
         self.lbl_comm = QLabel("Telemetry: Disconnected")
@@ -91,7 +95,7 @@ class MainWindow(QWidget):
         status_box.setLayout(status_layout)
         dashboard_layout.addWidget(status_box)
 
-        # Utility buttons row
+        # Utility buttons for common tasks stay pinned to the dashboard.
         util_row = QHBoxLayout()
         self.btn_about = QPushButton("About")
         self.btn_set_clock = QPushButton("Set Clock")
@@ -115,11 +119,12 @@ class MainWindow(QWidget):
 
         self.current_user = None
 
+        # Stack order: dashboard first, followed by parameters and egram pages.
         self.stack.addWidget(self.dashboard_group)   # index 0
         self.stack.addWidget(self.mode_params_page)  # index 1
         self.stack.addWidget(self.egram_page)  # index 1
 
-        # --- Telemetry service (stub) ---
+        # Telemetry service drives UART state updates and raw data handling
         self.telemetry = TelemetryService()
         self.telemetry.stateChanged.connect(self._on_tel_state)
         self.telemetry.serialConnected.connect(self._on_serial_connected)
@@ -131,7 +136,7 @@ class MainWindow(QWidget):
         self.egram_page.setTelemetry(self.telemetry)
 
 
-        # --- Connect signals ---
+        # Connect signals for navigation across stacked widgets.
         # Both buttons route to the combined page
         self.btn_modes_parameters.clicked.connect(
             lambda: self.stack.setCurrentWidget(self.mode_params_page)
@@ -143,7 +148,7 @@ class MainWindow(QWidget):
 
 
 
-        # Utility actions
+        # Hook utility actions that target the dashboard/outreach features.
         self.btn_about.clicked.connect(self._show_about)
         self.btn_set_clock.clicked.connect(self._set_clock)
         self.btn_new_patient.clicked.connect(self._new_patient)
@@ -169,8 +174,9 @@ class MainWindow(QWidget):
         )
 
 
-    # --- Event Handlers ---
+    # Event Handlers
     def open_register(self):
+        """Show the registration dialog so new clinicians can create accounts."""
         from dcm_ui.register_dialog import RegisterDialog
         dlg = RegisterDialog(self)
         if dlg.exec_():
@@ -184,7 +190,9 @@ class MainWindow(QWidget):
     def handle_login(self):
         user = self.login_user.text()
         password = self.login_pass.text()
+        # Authenticate credentials before revealing the dashboard stack.
         if self.user_manager.login(user, password):
+            # Store the active user and show the dashboard.
             self.current_user = user
 
             self.login_group.hide()
@@ -197,6 +205,7 @@ class MainWindow(QWidget):
             # Start a simulated telemetry session with a placeholder device id
             self.telemetry.start_session(device_id="PG-TEST-001")
         else:
+            # Tell the user when authentication fails so they can retry.
             QMessageBox.warning(self, "Login Failed", "Invalid username or password.")
 
     def _login_admin(self):
@@ -205,10 +214,11 @@ class MainWindow(QWidget):
         self.login_pass.setText("password")
         self.handle_login()
 
-    # --- Telemetry/UI helpers ---
+    # Telemetry/UI helpers
     def _on_tel_state(self, state: str, device_id, note):
+        """Reflect the live telemetry state in the dashboard status area."""
         self.lbl_comm.setText(f"Telemetry: {state}")
-        self.lbl_device.setText(f"Device: {device_id or '—'}")
+        self.lbl_device.setText(f"Device: {device_id or '-'}")
         self.lbl_note.setText(note or "")
 
     def _show_about(self):
@@ -220,6 +230,7 @@ class MainWindow(QWidget):
         }
         cfg_path = os.path.join(os.path.dirname(__file__), "..", "dcm_info.json")
         try:
+            # Load optional metadata so the About dialog reflects reality when present.
             cfg_path = os.path.normpath(cfg_path)
             if os.path.exists(cfg_path):
                 with open(cfg_path, "r") as f:
@@ -238,17 +249,21 @@ class MainWindow(QWidget):
     def _set_clock(self):
         from datetime import datetime
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        # Informational dialog logs the time so clinicians know when it was forced.
         QMessageBox.information(self, "Set Clock", f"Time set as: {now}")
 
     def _new_patient(self):
         # Clear contextual notes so the clinician can start fresh
         self.lbl_note.setText("Ready to interrogate a new device.")
+        # Prompt the user to connect telemetry for the next interrogation.
         QMessageBox.information(self, "New Patient", "Patient context reset. Connect telemetry when ready.")
 
     def _toggle_connection(self):
+        # Toggle between telemetry connection/stall based on current link state.
         if self.telemetry.status().state == TelemetryState.DISCONNECTED:
             port = self.port_combo.currentData()
             if not port:
+                # Ensure a UART selection exists before attempting to connect.
                 QMessageBox.warning(self, "Telemetry", "Select a serial port first.")
                 return
             self.telemetry.configure_serial(port)
@@ -258,16 +273,20 @@ class MainWindow(QWidget):
                 self.lbl_note.setText("UART connection failed.")
         else:
             self.telemetry.end_session()
+            # Update UI messages after the disconnect completes.
             self.lbl_note.setText("Telemetry session ended.")
             self.btn_toggle_comm.setText("Connect Telemetry")
 
     def _on_serial_connected(self, port: str):
+        # Update the note so the operator sees which port is live.
         self.lbl_note.setText(f"UART connected on {port}.")
 
     def _on_serial_disconnected(self):
+        # Let the user know the UART link dropped unexpectedly.
         self.lbl_note.setText("UART disconnected.")
 
     def _on_serial_error(self, message: str):
+        # Surface serial errors immediately and warn the operator.
         self.lbl_note.setText(message)
         QMessageBox.warning(self, "UART Error", message)
 
@@ -280,12 +299,14 @@ class MainWindow(QWidget):
         from PyQt5.QtWidgets import QApplication
 
         font = QFont(family, size)
+        # Ensure every top-level widget inherits the updated accessibility font.
         app = QApplication.instance()
         if app:
             app.setFont(font)
         self.setFont(font)
 
     def _refresh_ports(self):
+        # Rebuild the serial port dropdown so users pick a real UART port.
         self.port_combo.clear()
         try:
             from serial.tools import list_ports

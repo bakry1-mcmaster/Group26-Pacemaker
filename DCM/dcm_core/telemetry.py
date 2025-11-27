@@ -40,7 +40,7 @@ class TelemetryStatus:
 class TelemetryService(QObject):
     """Telemetry/UART service.
 
-    Manages the wireless link state as well as the underlying UART connection to
+    Manages the link state as well as the underlying UART connection to
     the pacemaker hardware (Deliverable 2 requirement).  When pyserial is not
     available the class gracefully degrades to the simulated states used in D1.
     """
@@ -51,12 +51,14 @@ class TelemetryService(QObject):
     serialError = pyqtSignal(str)
     rawDataReceived = pyqtSignal(bytes)
 
-    #EGRAM
+    # EGRAM
+    # Signals carry atrial/ventricular sample pairs plus marker text per sample.
     egramSampleReceived = pyqtSignal(object, object, object, object)
 
 
     def __init__(self):
         super().__init__()
+        # Used to detect when the clinician switches to a different pacemaker.
         self._last_device_id: Optional[str] = None
         self._device_id: Optional[str] = None
         self._state: str = TelemetryState.DISCONNECTED
@@ -67,18 +69,21 @@ class TelemetryService(QObject):
         self._stop_event = Event()
 
         #EGRAM
-        self._rx_buf = bytearray() #buffer to accumulate egram bytes
+        self._rx_buf = bytearray() # buffer that accumulates egram bytes until frames complete
         self._egram_streaming = False
 
     def status(self) -> TelemetryStatus:
+        """Expose the current telemetry status for UI consumers."""
         return TelemetryStatus(self._state, self._device_id)
 
     def _emit(self, state: str, note: Optional[str] = None):
+        # Publish the new telemetry state to connected UI consumers.
         self._state = state
         self.stateChanged.emit(self._state, self._device_id, note)
 
     # Session controls
     def configure_serial(self, port: Optional[str], baudrate: int = 115200):
+        """Persist UART configuration so subsequent connect attempts reuse the values."""
         self._port = port
         self._baudrate = baudrate
 
@@ -87,10 +92,12 @@ class TelemetryService(QObject):
             self._port = port
         if baudrate:
             self._baudrate = baudrate
+        # Ensure pyserial is installed and a port is configured before opening real hardware.
         if serial is None:
             self.serialError.emit("pyserial is not installed.")
             return False
         if not self._port:
+            # Avoid attempts to open a non-configured port.
             self.serialError.emit("No UART port configured.")
             return False
         # Already connected?
@@ -111,6 +118,7 @@ class TelemetryService(QObject):
         return True
 
     def disconnect_serial(self):
+        """Stop the background reader and release serial resources safely."""
         self._stop_event.set()
         if self._rx_thread and self._rx_thread.is_alive():
             self._rx_thread.join(timeout=1.0)
@@ -124,6 +132,7 @@ class TelemetryService(QObject):
         self.serialDisconnected.emit()
 
     def send_packet(self, payload: bytes):
+        """Write a telemetry frame when the UART link is alive."""
         if not payload:
             return
         if not self._serial or not getattr(self._serial, "is_open", False):
@@ -136,6 +145,7 @@ class TelemetryService(QObject):
             self.serialError.emit(f"UART write failed: {exc}")
 
     def _read_loop(self):  # pragma: no cover - hardware specific
+        """Background reader that emits Rx bytes until the session ends."""
         unexpected = False
         while not self._stop_event.is_set():
             try:
@@ -155,16 +165,19 @@ class TelemetryService(QObject):
             self.serialDisconnected.emit()
 
     def start_session(self, device_id: str, port: Optional[str] = None):
+        """Begin a telemetry interrogation session for a given device ID."""
         self._device_id = device_id
         if port:
             self._port = port
         if self._last_device_id and self._last_device_id != device_id:
+            # Raise state warning when the clinician switches to a different pacemaker.
             self._emit(
                 TelemetryState.DIFFERENT_DEVICE,
                 note="Approached device differs from previously interrogated.",
             )
         else:
             if self._port:
+                # Try to open UART using the stored port parameters.
                 connected = self.connect_serial()
                 if not connected:
                     self._emit(TelemetryState.DISCONNECTED, note="Unable to open UART.")
@@ -172,6 +185,7 @@ class TelemetryService(QObject):
             self._emit(TelemetryState.CONNECTED)
 
     def end_session(self):
+        """Conclude the telemetry session and revert state to disconnected."""
         # Remember last device for comparison next time
         self._last_device_id = self._device_id
         self._device_id = None
@@ -180,23 +194,28 @@ class TelemetryService(QObject):
 
     # --- Protocol helpers ---
     def send_params(self, params: dict):
+        """Serialize pacing parameters and transmit them to the device."""
         frame = self._build_params_frame(params)
         self.send_packet(frame)
 
     def request_echo(self):
+        """Request an echo response packet for connection validation."""
         self.send_packet(self._build_simple_frame(FN_ECHO))
 
     def request_egram(self):
+        # Start streaming EGRAM data from the pacemaker.
         self.send_packet(self._build_simple_frame(FN_EGRAM))
 
         self._egram_streaming = True
 
     def stop_egram(self):
+        # Halt any ongoing EGRAM stream before sending other packets.
         self.send_packet(self._build_simple_frame(FN_ESTOP))
 
         self._egram_streaming = False
 
     def _build_simple_frame(self, fn_code: int) -> bytes:
+        # Simple frames only carry the header/checksum and a zeroed payload.
         header = [SYNC, fn_code, fn_code ^ SYNC ^ SOH]
         payload = [0] * 13
         checksum = sum(payload) & 0xFF
@@ -222,17 +241,20 @@ class TelemetryService(QObject):
 
     @staticmethod
     def _write_u16(buffer, idx: int, value: int):
+        # Safeguard writes to the frame buffer keeping values within 16-bit bounds.
         value = max(0, min(0xFFFF, int(value)))
         buffer[idx] = value & 0xFF
         buffer[idx + 1] = (value >> 8) & 0xFF
 
     # Simulated conditions
     def set_out_of_range(self, is_out: bool):
+        """Force telemetry state to report an out-of-range condition."""
         if self._device_id is None:
             return
         self._emit(TelemetryState.OUT_OF_RANGE if is_out else TelemetryState.CONNECTED)
 
     def set_noise(self, is_noisy: bool):
+        """Force telemetry state to report noisy reception for diagnostics."""
         if self._device_id is None:
             return
         self._emit(TelemetryState.NOISE if is_noisy else TelemetryState.CONNECTED)
@@ -240,10 +262,10 @@ class TelemetryService(QObject):
     def _handle_rx_bytes(self, data: bytes):
         self._rx_buf.extend(data)
 
-        # dual-chamber frames (8 bytes)
+        # Handle egram sample frames as they accumulate in the buffer.
         while len(self._rx_buf) >= 4:
             if len(self._rx_buf) >= 8:  
-                # atrial + ventricular
+                # Decode dual-chamber frames (both atrial and ventricular values present).
                 atr = int.from_bytes(self._rx_buf[0:2], 'little')
                 amk = self._rx_buf[2:4].decode('ascii', errors='ignore')
                 ven = int.from_bytes(self._rx_buf[4:6], 'little')
@@ -253,7 +275,7 @@ class TelemetryService(QObject):
                     atr, amk, ven, vmk
                 )
             else:
-                # atrial or ventricular (4 bytes)
+                # Single-chamber frame (ventricular data only) is shorter.
                 ven = int.from_bytes(self._rx_buf[0:2], 'little')
                 vmk = self._rx_buf[2:4].decode('ascii', errors='ignore')
                 del self._rx_buf[:4]
