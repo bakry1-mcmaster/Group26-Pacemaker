@@ -280,29 +280,35 @@ class TelemetryService(QObject):
 
         if not self._egram_streaming:
             return
-        
+
         self._rx_buf.extend(data)
 
-        # dual-chamber frames (18)
+        # Each egram frame is 18 bytes: SYNC/SOH/FN/header checksum + 13 data bytes + data checksum.
         while len(self._rx_buf) >= EGRAM_FRAME_SIZE:
-            frame = self._rx_buf[:EGRAM_FRAME_SIZE]
+            if self._rx_buf[0] != SYNC or self._rx_buf[1] != SOH:
+                del self._rx_buf[0]
+                continue
+
+            frame = bytes(self._rx_buf[:EGRAM_FRAME_SIZE])
+            if frame[2] != FN_EGRAM:
+                del self._rx_buf[:EGRAM_FRAME_SIZE]
+                continue
+
+            data_bytes = frame[4:-1]
+            checksum = frame[-1]
+            if (sum(data_bytes) & 0xFF) != checksum:
+                del self._rx_buf[0]
+                continue
+
+            ven_raw = int.from_bytes(data_bytes[0:2], byteorder="little", signed=True)
+            marker_bytes = data_bytes[2:4]
+            ven_marker = marker_bytes.decode("ascii", errors="ignore").strip()
+            if not ven_marker:
+                ven_marker = "--"
+
             del self._rx_buf[:EGRAM_FRAME_SIZE]
 
-            # Decode signed int16 amplitudes (little-endian)
-            atr_raw = int.from_bytes(frame[1:9], byteorder="little", signed=True)
-            ven_raw = int.from_bytes(frame[10:18], byteorder="little", signed=True)
-
-            # 0 -> atr 1 -> vtr
-            atr_mark = frame[0]
-            ven_mark = frame[9]
-
-            atr = atr_raw
-            ven = ven_raw
-
-            amk = "A" if atr_mark == 0 else "V"
-            vmk = "A" if ven_mark == 0 else "V"
-
-            # Emit to any connected egram plot / handler
-            self.egramSampleReceived.emit(atr, amk, ven, vmk)
+            # The pacemaker stream only contains ventricular waveform data.
+            self.egramSampleReceived.emit(None, "--", ven_raw, ven_marker)
   
 
