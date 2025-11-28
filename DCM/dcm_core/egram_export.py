@@ -48,7 +48,7 @@ def export_current_to_json(
         mode=mode,
         params=snap,
         user=user,
-        source="simulated",
+        source="hardware",
     )
     if dcm_version:
         rec.meta.dcm_version = dcm_version

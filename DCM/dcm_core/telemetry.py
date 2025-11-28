@@ -6,6 +6,8 @@ from threading import Thread, Event
 
 from PyQt5.QtCore import QObject, pyqtSignal
 
+EGRAM_FRAME_SIZE = 6 
+
 try:
     import serial  # type: ignore
 except ImportError:  # pragma: no cover
@@ -238,27 +240,32 @@ class TelemetryService(QObject):
         self._emit(TelemetryState.NOISE if is_noisy else TelemetryState.CONNECTED)
 
     def _handle_rx_bytes(self, data: bytes):
+
+        if not self._egram_streaming:
+            return
+        
         self._rx_buf.extend(data)
 
-        # dual-chamber frames (8 bytes)
-        while len(self._rx_buf) >= 4:
-            if len(self._rx_buf) >= 8:  
-                # atrial + ventricular
-                atr = int.from_bytes(self._rx_buf[0:2], 'little')
-                amk = self._rx_buf[2:4].decode('ascii', errors='ignore')
-                ven = int.from_bytes(self._rx_buf[4:6], 'little')
-                vmk = self._rx_buf[6:8].decode('ascii', errors='ignore')
-                del self._rx_buf[:8]
-                self.egramSampleReceived.emit(
-                    atr, amk, ven, vmk
-                )
-            else:
-                # atrial or ventricular (4 bytes)
-                ven = int.from_bytes(self._rx_buf[0:2], 'little')
-                vmk = self._rx_buf[2:4].decode('ascii', errors='ignore')
-                del self._rx_buf[:4]
-                self.egramSampleReceived.emit(
-                    None, None, ven, vmk
-                )
+        # dual-chamber frames (6 bytes)
+        while len(self._rx_buf) >= EGRAM_FRAME_SIZE:
+            frame = self._rx_buf[:EGRAM_FRAME_SIZE]
+            del self._rx_buf[:EGRAM_FRAME_SIZE]
+
+            # Decode signed int16 amplitudes (little-endian)
+            atr_raw = int.from_bytes(frame[0:2], byteorder="little", signed=True)
+            ven_raw = int.from_bytes(frame[4:6], byteorder="little", signed=True)
+
+            # 0 -> atr 1 -> vtr
+            atr_mark = frame[2]
+            ven_mark = frame[5]
+
+            atr = atr_raw
+            ven = ven_raw 
+
+            amk = "A" if atr_mark == 0 else "V"
+            vmk = "A" if ven_mark == 0 else "V"
+
+            # Emit to any connected egram plot / handler
+            self.egramSampleReceived.emit(atr, amk, ven, vmk)
   
 

@@ -90,7 +90,7 @@ def new_template(
     mode: Optional[str],
     params: ParamsRecorded,
     user: Optional[str] = None,
-    source: str = "simulated",
+    source: str = "hardware",
 ) -> EgramRecord:
     """Factory used by export_current_to_json and for new recordings."""
     meta = EgramMeta(
