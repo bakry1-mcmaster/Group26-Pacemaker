@@ -6,7 +6,7 @@ from threading import Thread, Event
 
 from PyQt5.QtCore import QObject, pyqtSignal
 
-EGRAM_FRAME_SIZE = 18 
+EGRAM_FRAME_SIZE = 18
 
 try:
     import serial  # type: ignore
@@ -30,6 +30,53 @@ FN_EGRAM = 0x47
 FN_ECHO = 0x49
 FN_ESTOP = 0x62
 FN_PARAMS = 0x55
+
+
+def _normalize_int(value):
+    if isinstance(value, bool):
+        return 1 if value else 0
+    try:
+        return int(round(float(value)))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _coerce_u8(value):
+    return max(0, min(0xFF, _normalize_int(value)))
+
+
+def _coerce_u16(value):
+    return max(0, min(0xFFFF, _normalize_int(value)))
+
+
+_PARAM_LAYOUT = [
+    ("pacing_state", 1, _coerce_u8),
+    ("mode", 1, _coerce_u8),
+    ("hysteresis", 1, _coerce_u8),
+    ("hysteresis_interval", 2, _coerce_u16),
+    ("lowrate_interval", 2, _coerce_u16),
+    ("lrl_ppm", 2, _coerce_u16),
+    ("url_ppm", 2, _coerce_u16),
+    ("a_amp_mV", 2, _coerce_u16),
+    ("a_pw_ms", 2, _coerce_u16),
+    ("v_amp_mV", 2, _coerce_u16),
+    ("v_pw_ms", 2, _coerce_u16),
+    ("arp_ms", 2, _coerce_u16),
+    ("vrp_ms", 2, _coerce_u16),
+    ("a_sense_mV", 2, _coerce_u16),
+    ("v_sense_mV", 2, _coerce_u16),
+    ("pvarp_ms", 2, _coerce_u16),
+    ("pvarp_ext_ms", 2, _coerce_u16),
+    ("rs_percent", 1, _coerce_u8),
+    ("msr_bpm", 2, _coerce_u16),
+    ("at_level_code", 1, _coerce_u8),
+    ("react_time_s", 2, _coerce_u16),
+    ("response_factor", 1, _coerce_u8),
+    ("recovery_time_min", 2, _coerce_u16),
+    ("favd_ms", 2, _coerce_u16),
+    ("davd_ms", 2, _coerce_u16),
+    ("savd_ms", 2, _coerce_u16),
+]
 
 
 @dataclass
@@ -206,27 +253,17 @@ class TelemetryService(QObject):
         return frame
 
     def _build_params_frame(self, params: dict) -> bytes:
-        # Values are packed little-endian per SRS 5.1.2
-        data = [0] * 13
-        data[0] = params.get("pacing_state", 0)
-        data[1] = params.get("mode", 0)
-        data[2] = 1 if params.get("hysteresis") else 0
-        self._write_u16(data, 3, params.get("hysteresis_interval", 300))
-        self._write_u16(data, 5, params.get("lowrate_interval", 1000))
-        self._write_u16(data, 7, params.get("v_amp_mV", 3500))
-        width = int(round(params.get("v_width_ms", 0.4) * 10))
-        self._write_u16(data, 9, width)
-        self._write_u16(data, 11, params.get("vrp_ms", 320))
+        data_bytes = bytearray()
+        for key, size, encoder in _PARAM_LAYOUT:
+            encoded = encoder(params.get(key, 0))
+            if size == 1:
+                data_bytes.append(encoded)
+            else:
+                data_bytes.extend(encoded.to_bytes(size, byteorder="little"))
         header_checksum = SYNC ^ SOH ^ FN_PARAMS
-        checksum = sum(data) & 0xFF
-        frame = bytes([SYNC, SOH, FN_PARAMS, header_checksum, *data, checksum])
+        checksum = sum(data_bytes) & 0xFF
+        frame = bytes([SYNC, SOH, FN_PARAMS, header_checksum, *data_bytes, checksum])
         return frame
-
-    @staticmethod
-    def _write_u16(buffer, idx: int, value: int):
-        value = max(0, min(0xFFFF, int(value)))
-        buffer[idx] = value & 0xFF
-        buffer[idx + 1] = (value >> 8) & 0xFF
 
     # Simulated conditions
     def set_out_of_range(self, is_out: bool):
@@ -260,7 +297,7 @@ class TelemetryService(QObject):
             ven_mark = frame[9]
 
             atr = atr_raw
-            ven = ven_raw 
+            ven = ven_raw
 
             amk = "A" if atr_mark == 0 else "V"
             vmk = "A" if ven_mark == 0 else "V"

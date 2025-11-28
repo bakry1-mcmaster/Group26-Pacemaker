@@ -56,6 +56,16 @@ PACEMAKER_MODES = [
     "DDDR",
 ]
 
+AT_LEVELS = [
+    "V-Low",
+    "Low",
+    "Med-Low",
+    "Med",
+    "Med-High",
+    "High",
+    "V-High",
+]
+
 
 @dataclass
 class PacingParams:
@@ -237,10 +247,7 @@ class ModeParametersPage(QWidget):
         self.ed_msr.setValidator(QIntValidator(50, 175, self))
 
         self.cb_at = QComboBox()
-        at_choices = [
-            "V-Low", "Low", "Med-Low", "Med", "Med-High", "High", "V-High",
-        ]
-        for t in at_choices:
+        for t in AT_LEVELS:
             self.cb_at.addItem(t, t)
         at_index = max(0, self.cb_at.findData(self.params.at_level))
         self.cb_at.setCurrentIndex(at_index)
@@ -540,15 +547,36 @@ class ModeParametersPage(QWidget):
             mode_code = PACEMAKER_MODES.index(self.current_mode)
         except ValueError:
             mode_code = PACEMAKER_MODES.index("AAI")
+        at_level = self.params.at_level if self.params.at_level in AT_LEVELS else AT_LEVELS[0]
+        a_sense_mV = int(round(self.params.a_sense_mV * 1000))
+        v_sense_mV = int(round(self.params.v_sense_mV * 1000))
         payload = {
             "pacing_state": 0,  # PERMANENT
             "mode": mode_code,
-            "hysteresis": self.cb_hys.isChecked(),
+            "hysteresis": self.params.hys_on,
             "hysteresis_interval": self.params.pvarp_ms,
             "lowrate_interval": lowrate_interval,
+            "lrl_ppm": self.params.lrl_ppm,
+            "url_ppm": self.params.url_ppm,
+            "a_amp_mV": self.params.a_amp_mV,
+            "a_pw_ms": self.params.a_pw_ms,
             "v_amp_mV": self.params.v_amp_mV,
-            "v_width_ms": self.params.v_pw_ms,
+            "v_pw_ms": self.params.v_pw_ms,
+            "arp_ms": self.params.arp_ms,
             "vrp_ms": self.params.vrp_ms,
+            "a_sense_mV": a_sense_mV,
+            "v_sense_mV": v_sense_mV,
+            "pvarp_ms": self.params.pvarp_ms,
+            "pvarp_ext_ms": self.params.pvarp_ext_ms,
+            "rs_percent": self.params.rs_percent,
+            "msr_bpm": self.params.msr_bpm,
+            "at_level_code": AT_LEVELS.index(at_level),
+            "react_time_s": self.params.react_time_s,
+            "response_factor": self.params.response_factor,
+            "recovery_time_min": self.params.recovery_time_min,
+            "favd_ms": self.params.favd_ms,
+            "davd_ms": self.params.davd_ms,
+            "savd_ms": self.params.savd_ms,
         }
         self.telemetry.send_params(payload)
         self.telemetry.request_echo()
