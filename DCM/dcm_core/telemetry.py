@@ -6,7 +6,7 @@ from threading import Thread, Event
 
 from PyQt5.QtCore import QObject, pyqtSignal
 
-EGRAM_FRAME_SIZE = 6 
+EGRAM_FRAME_SIZE = 18 
 
 try:
     import serial  # type: ignore
@@ -246,18 +246,18 @@ class TelemetryService(QObject):
         
         self._rx_buf.extend(data)
 
-        # dual-chamber frames (6 bytes)
+        # dual-chamber frames (18)
         while len(self._rx_buf) >= EGRAM_FRAME_SIZE:
             frame = self._rx_buf[:EGRAM_FRAME_SIZE]
             del self._rx_buf[:EGRAM_FRAME_SIZE]
 
             # Decode signed int16 amplitudes (little-endian)
-            atr_raw = int.from_bytes(frame[0:2], byteorder="little", signed=True)
-            ven_raw = int.from_bytes(frame[4:6], byteorder="little", signed=True)
+            atr_raw = int.from_bytes(frame[1:9], byteorder="little", signed=True)
+            ven_raw = int.from_bytes(frame[10:18], byteorder="little", signed=True)
 
             # 0 -> atr 1 -> vtr
-            atr_mark = frame[2]
-            ven_mark = frame[5]
+            atr_mark = frame[0]
+            ven_mark = frame[9]
 
             atr = atr_raw
             ven = ven_raw 
