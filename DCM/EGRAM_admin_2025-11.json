@@ -1,0 +1,45 @@
+{
+  "meta": {
+    "session_id": "EGRAM-20251128T180210",
+    "user": "admin",
+    "device_id": null,
+    "source": "simulated",
+    "dcm_version": null,
+    "created_utc": "2025-11-28T18:02:10Z"
+  },
+  "mode": "AAI",
+  "params": {
+    "lrl_ppm": 60,
+    "url_ppm": 120,
+    "a_amp_mV": 3000.0,
+    "a_pw_ms": 0.4,
+    "v_amp_mV": 3500.0,
+    "v_pw_ms": 0.4,
+    "arp_ms": 250,
+    "vrp_ms": 320,
+    "a_sense_mV": 2.5,
+    "v_sense_mV": 2.5,
+    "pvarp_ms": 250,
+    "pvarp_ext_ms": 0,
+    "hys_on": false,
+    "rs_percent": 0,
+    "msr_bpm": 120,
+    "at_level": "Med",
+    "react_time_s": 30,
+    "response_fac": 8,
+    "recovery_time_min": 5,
+    "favd_ms": 150,
+    "davd_ms": 180,
+    "savd_ms": 150
+  },
+  "blocks": [
+    {
+      "channel": "V",
+      "sample_rate_Hz": 200,
+      "atr_samples": [],
+      "ven_samples": [],
+      "atr_markers": [],
+      "ven_markers": []
+    }
+  ]
+}

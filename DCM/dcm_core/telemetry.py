@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import struct
+
 from dataclasses import dataclass
 from typing import Optional
 from threading import Thread, Event
@@ -251,9 +253,8 @@ class TelemetryService(QObject):
             frame = self._rx_buf[:EGRAM_FRAME_SIZE]
             del self._rx_buf[:EGRAM_FRAME_SIZE]
 
-            # Decode signed int16 amplitudes (little-endian)
-            atr_raw = int.from_bytes(frame[1:9], byteorder="little", signed=True)
-            ven_raw = int.from_bytes(frame[10:18], byteorder="little", signed=True)
+            atr_raw = struct.unpack("<d", frame[1:9])[0]
+            ven_raw = struct.unpack("<d", frame[10:18])[0]
 
             # 0 -> atr 1 -> vtr
             atr_mark = frame[0]

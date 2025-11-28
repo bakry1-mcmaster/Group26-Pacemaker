@@ -103,7 +103,7 @@ class EgramPage(QWidget):
         self.plot_widget.showGrid(x=True, y=True, alpha=0.3)
         self.plot_widget.setLabel("left", "Amplitude", units="mV")
         self.plot_widget.setLabel("bottom", "Sample")
-        self.plot_widget.setYRange(-5000, 5000)
+        self.plot_widget.setYRange(-15, 15)
 
         self._atr_curve = self.plot_widget.plot(pen=pg.mkPen("r", width=1))
         self._ven_curve = self.plot_widget.plot(pen=pg.mkPen("b", width=1))
@@ -230,6 +230,9 @@ class EgramPage(QWidget):
             self._block.ven_samples.append(int(ven) if isinstance(ven, (int, float)) else 0)
             self._block.atr_markers.append(atr_marker or "--")
             self._block.ven_markers.append(ven_marker or "--")
+
+            print("Ventricular sample:", ven)
+
 
     # --- plotting ---
     def _refresh_plot(self):
