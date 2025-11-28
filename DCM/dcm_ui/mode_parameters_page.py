@@ -55,6 +55,9 @@ PACEMAKER_MODES = [
     "DDIR",
     "DDDR",
 ]
+# Index sent over telemetry as the mode code in FN_PARAMS when `_transmit_params` runs.
+#   0=Off, 1=AAT, 2=VVT, 3=AOO, 4=AAI, 5=VOO, 6=VVI, 7=VDD, 8=DOO, 9=DDI, 10=DDD,
+#   11=AOOR, 12=AAIR, 13=VOOR, 14=VVIR, 15=VDDR, 16=DOOR, 17=DDIR, 18=DDDR
 
 AT_LEVELS = [
     "V-Low",
@@ -116,6 +119,8 @@ class ModeParametersPage(QWidget):
     goHome = pyqtSignal()
     fontPreferencesChanged = pyqtSignal(str, int)
 
+    # Controls both mode selection and parameter editing; integrates with TelemetryService.
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("ModeParametersPage")
@@ -123,8 +128,8 @@ class ModeParametersPage(QWidget):
         self._font_family = base_font.family()
         self._font_size = base_font.pointSize() or 12
 
-        # Mode → parameter keys (see Class documentation)
-        # Supported selectable modes only: AOO, AAI, VOO, VVI, AOOR, VOOR, AAIR, VVIR, DDD, DDDR
+        # Mapping of mode selectors to the rows that should remain visible.
+        # Only the radio-button set shown above is available in this widget.
         self.visible_by_mode = {
             "AOO":  ["LRL", "URL", "AA", "APW"],
             "AAI":  ["LRL", "URL", "AA", "APW", "AS", "ARP", "PVARP", "HYS", "RS"],
@@ -148,6 +153,7 @@ class ModeParametersPage(QWidget):
 
     # --- UI ---
     def _build_ui(self):
+        # Build the full vertical layout with spacing that holds mode selectors, parameters, and actions.
         root = QVBoxLayout(self)
         root.setContentsMargins(12, 12, 12, 12)
         root.setSpacing(8)
@@ -180,6 +186,7 @@ class ModeParametersPage(QWidget):
             rb.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
 
         mode_row = QHBoxLayout()
+        # Group all radio buttons on a single row so modes stay visible.
         mode_row.addWidget(self.rb_aoo)
         mode_row.addWidget(self.rb_aai)
         mode_row.addWidget(self.rb_voo)
@@ -271,6 +278,7 @@ class ModeParametersPage(QWidget):
 
         # Row containers: key -> QWidget row with label+editor
         def make_row(label_text, editor):
+            # Helper that pairs a label with an input widget and keeps layout consistent.
             row = QWidget(self)
             h = QHBoxLayout(row)
             h.setContentsMargins(0, 0, 0, 0)
@@ -323,7 +331,7 @@ class ModeParametersPage(QWidget):
         for key in self._row_order:
             self.rows_layout.addWidget(self.row_widgets[key])
 
-        # Buttons row
+        # Buttons row (actions applying or resetting parameters)
         btn_row = QHBoxLayout()
         self.btn_reset = QPushButton("Reset Defaults")
         self.btn_save = QPushButton("Save Parameters")
@@ -349,6 +357,7 @@ class ModeParametersPage(QWidget):
         root.addStretch(1)
 
     def _create_amp_spinbox(self, stored_mV: float) -> QDoubleSpinBox:
+        # Normalize stored millivolt value into 0-5 V steps for display.
         spin = QDoubleSpinBox(self)
         spin.setDecimals(1)
         spin.setRange(0.0, 5.0)
@@ -359,6 +368,7 @@ class ModeParametersPage(QWidget):
         return spin
 
     def _create_pulse_width_spinbox(self, stored_ms: float) -> QSpinBox:
+        # Render pulse width between 1 and 30 ms using standard integer spinbox.
         spin = QSpinBox(self)
         spin.setRange(1, 30)
         spin.setSingleStep(1)
@@ -366,6 +376,7 @@ class ModeParametersPage(QWidget):
         return spin
 
     def _create_sensitivity_spinbox(self, stored_v: float) -> QDoubleSpinBox:
+        # Sensitivity editor constrained to the 0.0-5.0 V range the device expects.
         spin = QDoubleSpinBox(self)
         spin.setDecimals(1)
         spin.setRange(0.0, 5.0)
@@ -413,6 +424,7 @@ class ModeParametersPage(QWidget):
         self.fontPreferencesChanged.emit(self._font_family, self._font_size)
 
     def _wire(self):
+        # Connect UI widgets to callbacks that keep the model/status updated.
         self.mode_group.buttonClicked.connect(lambda btn: self.update_visible_params(btn.text()))
 
         inputs = (
@@ -448,10 +460,12 @@ class ModeParametersPage(QWidget):
         self._apply_font_preferences()
 
     def setTelemetry(self, telemetry):
+        # Store reference to TelemetryService so `_transmit_params` can push frames.
         self.telemetry = telemetry
 
     # --- Behavior ---
     def _select_default_mode(self):
+        # Default to AAI mode so the widget always shows a valid configuration on open.
         self.rb_aai.setChecked(True)
         self.update_visible_params("AAI")
 
@@ -511,6 +525,7 @@ class ModeParametersPage(QWidget):
         return PacingParams()
 
     def _apply_to_model(self):
+        # Push the current widget values into the PacingParams dataclass before saving.
         self.params.lrl_ppm = int(self.ed_lrl.text())
         self.params.url_ppm = int(self.ed_url.text())
         self.params.a_amp_mV = self._v_to_mv(self.ed_a_amp.value())
@@ -536,6 +551,7 @@ class ModeParametersPage(QWidget):
         self.params.savd_ms = int(self.ed_savd.text())
 
     def _transmit_params(self):
+        # Build and send the FN_PARAMS frame with the latest pacing parameters.
         if not self.telemetry:
             return
         try:
@@ -582,12 +598,14 @@ class ModeParametersPage(QWidget):
         self.telemetry.request_echo()
 
     def _reset(self):
+        # Restore hardcoded defaults and reflect immediately in the UI.
         self.params = PacingParams()
         self._refresh_fields()
         if hasattr(self, "lbl_status"):
             self.lbl_status.setText("Defaults restored.")
 
     def _refresh_fields(self):
+        # Update all widgets from the current `self.params` snapshot.
         self.ed_lrl.setText(str(self.params.lrl_ppm))
         self.ed_url.setText(str(self.params.url_ppm))
         self.ed_a_amp.setValue(self._mv_to_v(self.params.a_amp_mV))
@@ -615,6 +633,7 @@ class ModeParametersPage(QWidget):
         self.ed_savd.setText(str(self.params.savd_ms))
 
     def _validate_all(self) -> bool:
+        # Quick validation ensures each field stays within allowed numeric ranges.
         def ok_line(w):
             if not isinstance(w, QLineEdit):
                 return True
@@ -668,6 +687,7 @@ class ModeParametersPage(QWidget):
                 json.dump(asdict(self.params), f, indent=2)
             if hasattr(self, "lbl_status"):
                 self.lbl_status.setText("Parameters saved.")
+            # Persisted to disk, now push to the pacemaker hardware over UART.
             self._transmit_params()
         except Exception:
             pass

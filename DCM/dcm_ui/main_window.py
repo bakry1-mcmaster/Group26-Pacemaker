@@ -37,9 +37,9 @@ class MainWindow(QWidget):
         self.login_pass.setEchoMode(QLineEdit.Password)
         login_layout.addWidget(self.login_pass)
         
-        quick_admin = QPushButton("Debug Admin Login")
-        quick_admin.clicked.connect(self._login_admin)
-        login_layout.addWidget(quick_admin)
+        # quick_admin = QPushButton("Debug Admin Login")
+        # quick_admin.clicked.connect(self._login_admin)
+        # login_layout.addWidget(quick_admin)
 
         login_button = QPushButton("Login")
         login_button.clicked.connect(self.handle_login)

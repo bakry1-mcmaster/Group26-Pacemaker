@@ -232,7 +232,7 @@ class EgramPage(QWidget):
             self._block.atr_markers.append(atr_marker or "--")
             self._block.ven_markers.append(ven_marker or "--")
 
-            print("Ventricular sample:", ven)
+            # print("Ventricular sample:", ven)
 
 
     # --- plotting ---
