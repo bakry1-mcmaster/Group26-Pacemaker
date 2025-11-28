@@ -52,7 +52,6 @@ def export_current_to_json(
     if dcm_version:
         rec.meta.dcm_version = dcm_version
 
-    # No blocks/samples yet; this is a template with meta + params
     payload = rec.to_json(indent=2)
     with open(output_path, "w") as f:
         f.write(payload)

@@ -45,7 +45,7 @@ class EgramPage(QWidget):
         self._build_ui()
 
         self._timer = QTimer(self)
-        self._timer.setInterval(40)  # ~25 fps
+        self._timer.setInterval(40)  
         self._timer.timeout.connect(self._refresh_plot)
         self._timer.start()
 
@@ -103,7 +103,7 @@ class EgramPage(QWidget):
         self.plot_widget.showGrid(x=True, y=True, alpha=0.3)
         self.plot_widget.setLabel("left", "Amplitude", units="mV")
         self.plot_widget.setLabel("bottom", "Sample")
-        self.plot_widget.setYRange(-5000, 5000)
+        self.plot_widget.setYRange(0, 15)
 
         self._atr_curve = self.plot_widget.plot(pen=pg.mkPen("r", width=1))
         self._ven_curve = self.plot_widget.plot(pen=pg.mkPen("b", width=1))
@@ -185,7 +185,7 @@ class EgramPage(QWidget):
 
         self._block = EgramBlock(
             channel=channel,
-            sample_rate_Hz=200, #!!!double check what the sample rate is!!!
+            sample_rate_Hz=10, #!!!double check what the sample rate is!!!
         )
         self._record.blocks.append(self._block)
 
@@ -230,6 +230,8 @@ class EgramPage(QWidget):
             self._block.ven_samples.append(int(ven) if isinstance(ven, (int, float)) else 0)
             self._block.atr_markers.append(atr_marker or "--")
             self._block.ven_markers.append(ven_marker or "--")
+            
+            print("v samples:", ven)
 
     # --- plotting ---
     def _refresh_plot(self):
