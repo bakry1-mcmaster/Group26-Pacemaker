@@ -103,7 +103,8 @@ class EgramPage(QWidget):
         self.plot_widget.showGrid(x=True, y=True, alpha=0.3)
         self.plot_widget.setLabel("left", "Amplitude", units="mV")
         self.plot_widget.setLabel("bottom", "Sample")
-        self.plot_widget.setYRange(-15, 15)
+        self.plot_widget.setYRange(-6000, 6000)
+        self.plot_widget.setLimits(yMin=-32768, yMax=32767)
 
         self._atr_curve = self.plot_widget.plot(pen=pg.mkPen("r", width=1))
         self._ven_curve = self.plot_widget.plot(pen=pg.mkPen("b", width=1))
@@ -236,7 +237,7 @@ class EgramPage(QWidget):
 
     # --- plotting ---
     def _refresh_plot(self):
-        if not self._ven_buf:
+        if not (self._ven_buf or self._atr_buf):
             return
 
         n = len(self._ven_buf)
@@ -257,6 +258,16 @@ class EgramPage(QWidget):
             self._ven_curve.setData(x, ven_vals)
         else:
             self._ven_curve.setData([], [])
+
+        all_vals = atr_vals if show_atrial else []
+        if show_vent:
+            all_vals.extend(ven_vals)
+        if not all_vals:
+            return
+
+        max_val = max(abs(v) for v in all_vals) or 1
+        margin = max(1.0, max_val * 0.1)
+        self.plot_widget.setYRange(-max_val - margin, max_val + margin, padding=0)
 
     
     def set_username(self, username: Optional[str]):

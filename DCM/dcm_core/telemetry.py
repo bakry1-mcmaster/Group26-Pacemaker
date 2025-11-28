@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import struct
-
 from dataclasses import dataclass
 from typing import Optional
 from threading import Thread, Event
@@ -285,50 +283,17 @@ class TelemetryService(QObject):
 
         self._rx_buf.extend(data)
 
-        # Each egram frame is 18 bytes: SYNC/SOH/FN/header checksum + 13 data bytes + data checksum.
+        # Each Egram frame is 18 bytes: atr marker + 8-byte atr sample + vent marker + 8-byte vent sample.
         while len(self._rx_buf) >= EGRAM_FRAME_SIZE:
-            if self._rx_buf[0] != SYNC or self._rx_buf[1] != SOH:
-                del self._rx_buf[0]
-                continue
-
-            frame = bytes(self._rx_buf[:EGRAM_FRAME_SIZE])
-            if frame[2] != FN_EGRAM:
-                del self._rx_buf[:EGRAM_FRAME_SIZE]
-                continue
-
-            data_bytes = frame[4:-1]
-            checksum = frame[-1]
-            if (sum(data_bytes) & 0xFF) != checksum:
-                del self._rx_buf[0]
-                continue
-
-            ven_raw = int.from_bytes(data_bytes[0:2], byteorder="little", signed=True)
-            marker_bytes = data_bytes[2:4]
-            ven_marker = marker_bytes.decode("ascii", errors="ignore").strip()
-            if not ven_marker:
-                ven_marker = "--"
-
+            frame = self._rx_buf[:EGRAM_FRAME_SIZE]
             del self._rx_buf[:EGRAM_FRAME_SIZE]
 
-<<<<<<< HEAD
-            atr_raw = struct.unpack("<d", frame[1:9])[0]
-            ven_raw = struct.unpack("<d", frame[10:18])[0]
+            atr_marker = frame[0]
+            atr_raw = int.from_bytes(frame[1:3], byteorder="little", signed=True)
+            ven_marker = frame[9]
+            ven_raw = int.from_bytes(frame[10:12], byteorder="little", signed=True)
 
-            # 0 -> atr 1 -> vtr
-            atr_mark = frame[0]
-            ven_mark = frame[9]
+            atr_label = str(atr_marker)
+            ven_label = str(ven_marker)
 
-            atr = atr_raw
-            ven = ven_raw 
-
-            amk = "A" if atr_mark == 0 else "V"
-            vmk = "A" if ven_mark == 0 else "V"
-
-            # Emit to any connected egram plot / handler
-            self.egramSampleReceived.emit(atr, amk, ven, vmk)
-=======
-            # The pacemaker stream only contains ventricular waveform data.
-            self.egramSampleReceived.emit(None, "--", ven_raw, ven_marker)
->>>>>>> f5a749c484997d08ae2584aebd6a71aea07afd47
-  
-
+            self.egramSampleReceived.emit(atr_raw, atr_label, ven_raw, ven_label)
