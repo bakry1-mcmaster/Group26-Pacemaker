@@ -94,8 +94,8 @@ class TelemetryService(QObject):
     """Telemetry/UART service.
 
     Manages the wireless link state as well as the underlying UART connection to
-    the pacemaker hardware (Deliverable 2 requirement).  When pyserial is not
-    available the class gracefully degrades to the simulated states used in D1.
+    the pacemaker hardware.  When pyserial is not available the class gracefully
+    degrades to the simulated states.
     """
 
     stateChanged = pyqtSignal(str, object, object)  # state, device_id, note
